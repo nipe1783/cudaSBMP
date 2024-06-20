@@ -24,6 +24,8 @@ include_directories(
 set(SOURCE_FILES
     src/agent/Agent.cpp
     src/state/State.cpp
+    src/planners/Planner.cu
+    src/planners/RRT.cu
 )
 
 # Add a library target for your non-CUDA code

@@ -6,28 +6,33 @@
 #include <thrust/device_vector.h>
 #include <thrust/transform.h>
 #include <thrust/functional.h>
+#include "planners/Planner.cuh"
+#include "planners/RRT.cuh"
 
 int main(void){
 
-    const int N = 6;
-    int h_data[N] = {1, 2, 3, 4, 5, 6};
+    // Create a planner
+    RRT rrt;
+    float* samples1 = rrt.generateRandomSamples(State(0, 0, 0, 0), 256);
 
-    // Transfer data to the device
-    thrust::device_vector<int> d_data(h_data, h_data + N);
-
-    // Apply a transformation (multiply each element by 2)
-    thrust::transform(d_data.begin(), d_data.end(), d_data.begin(), thrust::placeholders::_1 * 2);
-
-    // Transfer data back to the host
-    thrust::copy(d_data.begin(), d_data.end(), h_data);
-
-    // Print the results
-    std::cout << "Result: ";
-    for (int i = 0; i < N; i++) {
-        std::cout << h_data[i] << " ";
+    // Print samples
+    printf("Samples1:\n");
+    for (int i = 0; i < 256; i++){
+        std::cout << samples1[i * 4] << " " << samples1[i * 4 + 1] << " " << samples1[i * 4 + 2] << " " << samples1[i * 4 + 3] << std::endl;
     }
-    std::cout << std::endl;
 
-    printf("TEST2\n");
+    float* samples2 = rrt.generateRandomSamples(State(1, 1, 1, 1), 256);
+
+    // Print samples
+    printf("Samples2:\n");
+    for (int i = 0; i < 256; i++){
+        std::cout << samples2[i * 4] << " " << samples2[i * 4 + 1] << " " << samples2[i * 4 + 2] << " " << samples2[i * 4 + 3] << std::endl;
+    }
+
+    // Print Samples 1:
+    printf("Samples1:\n");
+    for (int i = 0; i < 256; i++){
+        std::cout << samples1[i * 4] << " " << samples1[i * 4 + 1] << " " << samples1[i * 4 + 2] << " " << samples1[i * 4 + 3] << std::endl;
+    }
     return 0;
 }
