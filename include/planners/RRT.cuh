@@ -9,5 +9,5 @@ class RRT : public Planner
         RRT() = default;
 
         // methods
-        void plan() override;
+        void plan(float* start, float* goal) override;
 };

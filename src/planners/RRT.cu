@@ -5,6 +5,9 @@
 #include <Eigen/Core>
 #include "agent/Agent.h"
 
-void RRT::plan(){
-    printf("Planning with RRT\n");
+void RRT::plan(float* start, float* goal){
+    
+    float* samples = nullptr;
+    float* controls = nullptr;
+    generateRandomTree(start, 100, &samples, &controls);
 }

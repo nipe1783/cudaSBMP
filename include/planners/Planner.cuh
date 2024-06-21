@@ -9,7 +9,8 @@ class Planner {
         Planner() = default;
 
         // methods
-        virtual void plan() = 0;
-        float* generateRandomSamples(const State &state, int numSamples);
+        virtual void plan(float* root, float* goal) = 0;
+        void generateRandomSamples(const float* parent, const int numSamples, float **samples, float **controls);
+        void generateRandomTree(const float* parent, const int numSamples, float **samples, float **controls);
 
 };
