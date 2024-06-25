@@ -12,5 +12,6 @@ class Planner {
         virtual void plan(float* root, float* goal) = 0;
         void generateRandomSamples(const float* parent, const int numSamples, float **samples, float **controls);
         void generateRandomTree(const float* parent, const int numSamples, float **samples, float **controls);
+        void generateRandomTreeV2(const float* root, const int numSamples, float **samples);
 
 };

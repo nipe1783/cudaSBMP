@@ -9,5 +9,5 @@ void RRT::plan(float* start, float* goal){
     
     float* samples = nullptr;
     float* controls = nullptr;
-    generateRandomTree(start, 100, &samples, &controls);
+    generateRandomTreeV2(start, 100, &samples);
 }
