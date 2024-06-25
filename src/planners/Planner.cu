@@ -166,10 +166,10 @@ void Planner::generateRandomTree(const float* parent, const int numSamples, floa
 }
 
 __device__
-void propagateStateV2(float* x0, float* x1, int numDisc){
+void propagateStateV2(float* x0, float* x1, int numDisc, int seed){
     // Seed random number generator
     curandState state;
-    curand_init((unsigned long long)clock(), 0, 0, &state);
+    curand_init(seed, 0, 0, &state);
 
     // Generate random controls
     x1[4] = curand_uniform(&state) * 5.0f - 2.5f;  // Scale to range [-2.5, 2.5]
@@ -205,7 +205,7 @@ void generateRandomTreeKernelV2(const float* root, float* tree, const int numIte
     int col = (blockIdx.x * blockDim.x + threadIdx.x) * SAMPLE_DIM;
     for (int row = 0; row < numIterations; row++) {
         int outIndex = row * tWidth + col;
-        propagateStateV2(x0, &tree[outIndex], 20);
+        propagateStateV2(x0, &tree[outIndex], 20, outIndex);
 
         __syncthreads();
         if (threadIdx.x < STATE_DIM) {
@@ -220,7 +220,7 @@ void Planner::generateRandomTreeV2(const float* root, const int numSamples, floa
     // initialize execution parameters
     const int threadsPerBlock = 32;
     const int blocksPerGrid = 32;
-    const int rowsTree = 100;
+    const int rowsTree = 10;
     const int colsTree = SAMPLE_DIM * threadsPerBlock * blocksPerGrid;
     const int tWidth = SAMPLE_DIM*threadsPerBlock*blocksPerGrid;
     int sizeTree = rowsTree * colsTree * sizeof(float);
