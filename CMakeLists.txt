@@ -25,7 +25,8 @@ set(SOURCE_FILES
     src/agent/Agent.cpp
     src/state/State.cpp
     src/planners/Planner.cu
-    src/planners/RRT.cu
+    src/planners/NaivePlanner.cu
+    src/planners/CostPropPlanner.cu
 )
 
 # Add a library target for your non-CUDA code

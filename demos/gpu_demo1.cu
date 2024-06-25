@@ -7,12 +7,13 @@
 #include <thrust/transform.h>
 #include <thrust/functional.h>
 #include "planners/Planner.cuh"
-#include "planners/RRT.cuh"
+#include "planners/NaivePlanner.cuh"
+#include "planners/CostPropPlanner.cuh"
 
 int main(void){
 
     // Create a planner
-    RRT rrt;
+    CostPropPlanner rrt;
     float* start = new float[4];
     float* goal = new float[4];
     start[0] = 0;
