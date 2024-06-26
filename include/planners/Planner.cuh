@@ -8,6 +8,5 @@ class Planner {
         // methods
         virtual void plan(float* root, float* goal) = 0;
         virtual void generateRandomTree(const float* root, const int numSamples, float **samples) = 0;
-        void checkCudaError(cudaError_t err, const char* msg);
 
 };

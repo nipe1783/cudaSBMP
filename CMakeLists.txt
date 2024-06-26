@@ -27,6 +27,9 @@ set(SOURCE_FILES
     src/planners/Planner.cu
     src/planners/NaivePlanner.cu
     src/planners/CostPropPlanner.cu
+    src/planners/KGMT.cu
+    src/helper/helper.cu
+    src/occupancyMaps/OccupancyGrid.cu
 )
 
 # Add a library target for your non-CUDA code

@@ -1,4 +1,5 @@
 #include "planners/NaivePlanner.cuh"
+#include "helper/helper.cuh"
 #include <cuda_runtime.h>
 #include <stdio.h>
 #include <cstdio>
@@ -93,36 +94,36 @@ void NaivePlanner::generateRandomTree(const float* root, const int numSamples, f
     float *dRoot;
 
     // allocate memory on device
-    checkCudaError(cudaMalloc((void **)&dTree, sizeTree), "Failed to allocate device memory for tree");
-    checkCudaError(cudaMalloc((void **)&dRoot, sizeSample), "Failed to allocate device memory for parent state");
+    CUDA_ERROR_CHECK(cudaMalloc((void **)&dTree, sizeTree));
+    CUDA_ERROR_CHECK(cudaMalloc((void **)&dRoot, sizeSample));
     
     // copy parent state to device
-    checkCudaError(cudaMemcpy(dRoot, root, sizeSample, cudaMemcpyHostToDevice), "Failed to copy parent state to device");
+    CUDA_ERROR_CHECK(cudaMemcpy(dRoot, root, sizeSample, cudaMemcpyHostToDevice));
     
     // Initialize Timer
     cudaEvent_t start, stop;
-    checkCudaError(cudaEventCreate(&start), "Failed to create start event");
-    checkCudaError(cudaEventCreate(&stop), "Failed to create stop event");
-    checkCudaError(cudaEventRecord(start), "Failed to record start event");
+    CUDA_ERROR_CHECK(cudaEventCreate(&start));
+    CUDA_ERROR_CHECK(cudaEventCreate(&stop));
+    CUDA_ERROR_CHECK(cudaEventRecord(start));
 
     // Call the kernel
     generateRandomTreeKernel<<<dimGrid, dimBlock>>>(dRoot, dTree, rowsTree, tWidth);
 
     // Stop Timer
-    checkCudaError(cudaEventRecord(stop), "Failed to record stop event");
-    checkCudaError(cudaEventSynchronize(stop), "Failed to synchronize stop event");
-    checkCudaError(cudaEventElapsedTime(&milliseconds, start, stop), "Failed to calculate elapsed time");
+    CUDA_ERROR_CHECK(cudaEventRecord(stop));
+    CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
+    CUDA_ERROR_CHECK(cudaEventElapsedTime(&milliseconds, start, stop));
 
     // Transfer data from device to host
-    checkCudaError(cudaMemcpy(hTree, dTree, sizeTree, cudaMemcpyDeviceToHost), "Failed to copy tree to host");
+    CUDA_ERROR_CHECK(cudaMemcpy(hTree, dTree, sizeTree, cudaMemcpyDeviceToHost));
 
     // Free device memory
-    checkCudaError(cudaFree(dTree), "Failed to free device memory for tree");
-    checkCudaError(cudaFree(dRoot), "Failed to free device memory for parent state");
+    CUDA_ERROR_CHECK(cudaFree(dTree));
+    CUDA_ERROR_CHECK(cudaFree(dRoot));
 
     // Destroy CUDA events
-    checkCudaError(cudaEventDestroy(start), "Failed to destroy start event");
-    checkCudaError(cudaEventDestroy(stop), "Failed to destroy stop event");
+    CUDA_ERROR_CHECK(cudaEventDestroy(start));
+    CUDA_ERROR_CHECK(cudaEventDestroy(stop));
 
     // Print Information
     printf("Kernel execution time: %f milliseconds\n", milliseconds);
