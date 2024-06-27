@@ -32,6 +32,7 @@ KGMT::KGMT(float width, float height, int N, int numIterations, int maxSamples, 
     d_G_ptr_ = thrust::raw_pointer_cast(d_G_.data());
     d_samples_ptr_ = thrust::raw_pointer_cast(d_samples_.data());
     d_scanIdx_ptr_ = thrust::raw_pointer_cast(d_scanIdx_.data());
+    
     d_activeIdx_G_ptr_ = thrust::raw_pointer_cast(d_activeGIdx_.data());
     d_activeIdx_ptr_ = thrust::raw_pointer_cast(d_activeIdx_.data());
     d_eConnectivity_ptr_ = thrust::raw_pointer_cast(d_eConnectivity_.data());
@@ -42,6 +43,7 @@ KGMT::KGMT(float width, float height, int N, int numIterations, int maxSamples, 
 }
 
 void KGMT::plan(float* initial, float* goal) {
+    
     double t_kgmtStart = std::clock();
 
     // initialize vectors with root of tree
@@ -51,8 +53,8 @@ void KGMT::plan(float* initial, float* goal) {
     
     const int blockSize = 128;
 	const int gridSize = std::min((maxSamples_ + blockSize - 1) / blockSize, 2147483647);
-    int gridSizeActive;
-    const int blockSizeActive = 128;
+    int gridSizeActive = 1;
+    const int blockSizeActive = 32;
 
     // initialize random seed for curand
     curandState* d_states;
@@ -76,13 +78,16 @@ void KGMT::plan(float* initial, float* goal) {
         findInd<<<gridSize, blockSize>>>(maxSamples_, d_G_ptr_, d_scanIdx_ptr_, d_activeIdx_G_ptr_);
 
         // expand active samples in G. Add new samples to eUnexplored.
-        gridSizeActive = std::min((activeSize + blockSizeActive - 1) / blockSizeActive, 2147483647);
+        // gridSizeActive = std::min((activeSize + blockSizeActive - 1) / blockSizeActive, 2147483647);
+        gridSizeActive = 1;
         propagateG<<<gridSizeActive, blockSizeActive>>>(d_samples_ptr_, d_eUnexplored_ptr_, d_eClosed_ptr_, d_G_ptr_, d_eConnectivity_ptr_, d_eParentIdx_ptr_, d_activeIdx_G_ptr_, activeSize, treeSize_, sampleDim_, agentLength_, numDisc_, d_states);
         
         // move samples from eUnexplored to eOpen.
         thrust::exclusive_scan(d_eUnexplored_.begin(), d_eUnexplored_.end(), d_scanIdx_.begin());
         activeSize = d_scanIdx_[maxSamples_-1];
         (d_eUnexplored_[maxSamples_ - 1]) ? ++activeSize : 0;
+        printDeviceVector(d_eUnexplored_ptr_, 100);
+        printDeviceVector(d_scanIdx_ptr_, 100);
         findInd<<<gridSize, blockSize>>>(maxSamples_, d_eUnexplored_ptr_, d_scanIdx_ptr_, d_activeIdx_ptr_);
         gridSizeActive = std::min((activeSize + blockSizeActive - 1) / blockSizeActive, 2147483647);
         expandEOpen<<<gridSizeActive, blockSizeActive>>>(d_eUnexplored_ptr_, d_eClosed_ptr_, d_eOpen_ptr_, d_eConnectivity_ptr_, d_activeIdx_ptr_, activeSize, connThresh_);
@@ -101,6 +106,10 @@ void KGMT::plan(float* initial, float* goal) {
 
     double t_kgmt = (std::clock() - t_kgmtStart) / (double) CLOCKS_PER_SEC;
     std::cout << "time inside KGMT is " << t_kgmt << std::endl;
+
+    printDeviceVector(d_eUnexplored_ptr_, 100);
+    printDeviceVector(d_eConnectivity_ptr_, 100);
+    printDeviceVector(d_eOpen_ptr_, 100);
 
     // move vectors to csv to be plotted.
     copyAndWriteVectorToCSV(d_samples_, "samples.csv", maxSamples_, sampleDim_);
@@ -123,27 +132,60 @@ void findInd(int numSamples, bool* S, int* scanIdx, int* activeS){
 
 // TODO: Possibly make x0 a shared memory variable and all threads in a block propagate the same sample.
 // Can I make the memory access of samples coalesced? All G nodes are next to eachother in samples.
+// __global__
+// void propagateG(float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* eParentIDx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states) {
+//     int tid = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (tid >= activeSize_G)
+//         return;
+//     int x0Idx = activeIdx_G[tid];
+//     if(G[x0Idx]){
+//         float* x0 = &samples[x0Idx * sampleDim];
+//         float* x1 = &samples[treeSize * sampleDim];
+//         int x1Index = treeSize + tid;
+//         curandState state = states[tid];
+//         propagateState(x0, x1, numDisc, x1Index, agentLength, &state);
+//         eConn[x1Index] = calculateConnectivity(x1);
+//         eUnexplored[x1Index] = true;
+//         eClosed[x0Idx] = true;  // TODO: Do I need to do this? Possibly remove eClosed and just use G.
+//         G[x0Idx] = false;
+//         eParentIDx[x1Index] = x0Idx;
+//         states[tid] = state;
+//     }
+// }
+
 __global__
 void propagateG(float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* eParentIDx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid >= activeSize_G)
+    
+    if (blockIdx.x > activeSize_G)
         return;
-    int x0Idx = activeIdx_G[tid];
-    if(G[x0Idx]){
-        float* x0 = &samples[x0Idx * sampleDim];
-        float* x1 = &samples[treeSize * sampleDim];
+
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;    
+    __shared__ int x0Idx;
+    if (threadIdx.x == 0) {
+        x0Idx = activeIdx_G[blockIdx.x];
+    }
+    __syncthreads();
+    if (G[x0Idx]) {
+        __shared__ float x0[7];
+        if (threadIdx.x < sampleDim) {
+            x0[threadIdx.x] = samples[x0Idx * sampleDim + threadIdx.x];
+        }
+        __syncthreads();
+        float* x1 = &samples[treeSize * sampleDim + tid * sampleDim];
         int x1Index = treeSize + tid;
+
         curandState state = states[tid];
         propagateState(x0, x1, numDisc, x1Index, agentLength, &state);
         eConn[x1Index] = calculateConnectivity(x1);
         eUnexplored[x1Index] = true;
-        eClosed[x0Idx] = true;  // TODO: Do I need to do this? Possibly remove eClosed and just use G.
-        G[x0Idx] = false;
         eParentIDx[x1Index] = x0Idx;
         states[tid] = state;
+        if (threadIdx.x == 0) {
+            eClosed[x0Idx] = true;  // TODO: Possibly remove eClosed and just use G.
+            G[x0Idx] = false;
+        }
     }
 }
-
 __global__
 void expandEOpen(bool* eUnexplored, bool* eClosed, bool* eOpen, float* eConn, int* activeEUnexplored_Idx, int size_activeEUnexplored, float connThresh){
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
