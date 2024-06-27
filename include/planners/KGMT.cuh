@@ -4,6 +4,7 @@
 #include "occupancyMaps/OccupancyGrid.cuh"
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
+#include <curand_kernel.h>
 
 class KGMT
 {
@@ -37,6 +38,7 @@ class KGMT
         thrust::device_vector<int> d_scanIdx_; // stores scan of G. ex: G = [0, 1, 0, 1, 1, 0, 1] -> scanIdx = [0,0,1,1,2,3,3]. Used to find active samples in G.
         thrust::device_vector<int> d_activeGIdx_; // Used to store indeces that are true in G. ex [1,3,5] means samples 1,3,5 are in G.
         thrust::device_vector<int> d_activeIdx_;
+        thrust::device_vector<int> d_eParentIdx_; // Stores parent sample idx. Ex: d_parentIdx[10] = 3. Parent of sample 3 is 10.
         thrust::device_vector<float> d_eConnectivity_; // Stores connectivty score for each sample. 
         thrust::device_vector<float> d_samples_; // Stores all samples. Size is maxSamples_ * sampleDim_.
         bool *d_eOpen_ptr_;
@@ -50,6 +52,8 @@ class KGMT
         int *d_scanIdx_ptr_;
         int *d_activeIdx_G_ptr_; // TODO: Possibly delete.
         int *d_activeIdx_ptr_;
+        int *d_eParentIdx_ptr_;
+        
 };
 
 // GPU kernels:
@@ -65,8 +69,10 @@ __global__ void findInd(int numSamples, bool* G, int* scanIdx, int* activeGIdx);
  * Adds new samples to eUnexplored. Calculates connectivity score for new samples. 
  * Moves G samples to eClosed.
  */
-__global__ void propagateG(float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc);
+__global__ void propagateG(float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* eParentIDx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states);
 __global__ void expandEOpen(bool* eUnexplored, bool* eClosed, bool* eOpen, float* eConn, int* activeEUnexplored_Idx, int size_activeEUnexplored, float connThresh);
+__global__ void expandG(bool* eOpen, bool* G, float* eConn, int* activeEOpen_Idx, int size_activeEOpen, float connThresh);
+__global__ void initCurandStates(curandState* states, int numStates, int seed);
 
 // GPU device functions:
 
@@ -74,7 +80,7 @@ __global__ void expandEOpen(bool* eUnexplored, bool* eClosed, bool* eOpen, float
  * @brief Populates X1 with new sample. 
  *
  */
-__device__ void propagateState(float* x0, float* x1, int numDisc, int x1Index, float agentLength);
+__device__ void propagateState(float* x0, float* x1, int numDisc, int x1Index, float agentLength, curandState* state);
 
 /**
  * @brief Calculates connectivity score for a sample.

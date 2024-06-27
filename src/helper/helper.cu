@@ -21,3 +21,28 @@ __device__ void printSample(float* x, int sampleDim) {
     }
     printf("\n");
 }
+
+template <typename T>
+void writeVectorToCSV(const thrust::host_vector<T>& vec, const std::string& filename, int rows, int cols) {
+    std::ofstream file;
+    file.open(filename);
+
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            file << vec[i * cols + j];
+            if (j < cols - 1) {
+                file << ",";
+            }
+        }
+        file << std::endl;
+    }
+
+    file.close();
+}
+
+template <typename T>
+void copyAndWriteVectorToCSV(const thrust::device_vector<T>& d_vec, const std::string& filename, int rows, int cols) {
+    thrust::host_vector<T> h_vec(d_vec.size());
+    cudaMemcpy(thrust::raw_pointer_cast(h_vec.data()), thrust::raw_pointer_cast(d_vec.data()), d_vec.size() * sizeof(T), cudaMemcpyDeviceToHost);
+    writeVectorToCSV(h_vec, filename, rows, cols);
+}

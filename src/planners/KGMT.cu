@@ -9,6 +9,7 @@
 #include "helper/helper.cu"
 #include <curand_kernel.h>
 #include <chrono>
+#include <ctime>
 
 KGMT::KGMT(float width, float height, int N, int numIterations, int maxSamples, int numDisc, int sampleDim, float agentLength):
     width_(width), height_(height), N_(N), numIterations_(numIterations), maxSamples_(maxSamples), numDisc_(numDisc), sampleDim_(sampleDim), agentLength_(agentLength){
@@ -21,6 +22,7 @@ KGMT::KGMT(float width, float height, int N, int numIterations, int maxSamples, 
     d_scanIdx_ = thrust::device_vector<int>(maxSamples);
     d_activeGIdx_ = thrust::device_vector<int>(maxSamples);
     d_activeIdx_ = thrust::device_vector<int>(maxSamples);
+    d_eParentIdx_ = thrust::device_vector<int>(maxSamples);
     d_samples_ = thrust::device_vector<float>(maxSamples * sampleDim);
     d_eConnectivity_ = thrust::device_vector<float>(maxSamples);
 
@@ -33,8 +35,10 @@ KGMT::KGMT(float width, float height, int N, int numIterations, int maxSamples, 
     d_activeIdx_G_ptr_ = thrust::raw_pointer_cast(d_activeGIdx_.data());
     d_activeIdx_ptr_ = thrust::raw_pointer_cast(d_activeIdx_.data());
     d_eConnectivity_ptr_ = thrust::raw_pointer_cast(d_eConnectivity_.data());
+    d_eParentIdx_ptr_ = thrust::raw_pointer_cast(d_eParentIdx_.data());
 
     cudaMalloc(&d_costGoal, sizeof(float));
+    thrust::fill(d_eParentIdx_.begin(), d_eParentIdx_.end(), -1);
 }
 
 void KGMT::plan(float* initial, float* goal) {
@@ -44,15 +48,22 @@ void KGMT::plan(float* initial, float* goal) {
     cudaMemcpy(d_samples_ptr_, initial, sampleDim_ * sizeof(float), cudaMemcpyHostToDevice);
     bool value = true;
     cudaMemcpy(d_G_ptr_, &value, sizeof(bool), cudaMemcpyHostToDevice);
-
+    
     const int blockSize = 128;
-    // const int gridSize = std::min((maxSamples_ + blockSize - 1) / blockSize, 2147483647);
-    const int gridSize = 1;
+	const int gridSize = std::min((maxSamples_ + blockSize - 1) / blockSize, 2147483647);
+    int gridSizeActive;
+    const int blockSizeActive = 128;
+
+    // initialize random seed for curand
+    curandState* d_states;
+    cudaMalloc(&d_states, maxSamples_ * sizeof(curandState));
+    initCurandStates<<<(maxSamples_ + blockSize - 1) / blockSize, blockSize>>>(d_states, maxSamples_, time(NULL));
 
     int itr = 0;
     treeSize_ = 1;
     connThresh_ = 0.0;
     int activeSize = 0;
+
     while(itr < numIterations_){
         itr++;
 
@@ -60,31 +71,43 @@ void KGMT::plan(float* initial, float* goal) {
         thrust::exclusive_scan(d_G_.begin(), d_G_.end(), d_scanIdx_.begin());
         activeSize = d_scanIdx_[maxSamples_-1];
         (d_G_[maxSamples_ - 1]) ? ++activeSize : 0;
-        printf("Iteration %d, active G Size %d\n", itr, activeSize);
 
         // find indices of active samples in G.
         findInd<<<gridSize, blockSize>>>(maxSamples_, d_G_ptr_, d_scanIdx_ptr_, d_activeIdx_G_ptr_);
 
         // expand active samples in G. Add new samples to eUnexplored.
-        const int blockSizeActive = 128;
-        // const int gridSizeActive = std::min((activeSize + blockSizeActive - 1) / blockSizeActive, 2147483647);
-        const int gridSizeActive = 1;
-        propagateG<<<gridSizeActive, blockSizeActive>>>(d_samples_ptr_, d_eUnexplored_ptr_, d_eClosed_ptr_, d_G_ptr_, d_eConnectivity_ptr_, d_activeIdx_G_ptr_, activeSize, treeSize_, sampleDim_, agentLength_, numDisc_);
+        gridSizeActive = std::min((activeSize + blockSizeActive - 1) / blockSizeActive, 2147483647);
+        propagateG<<<gridSizeActive, blockSizeActive>>>(d_samples_ptr_, d_eUnexplored_ptr_, d_eClosed_ptr_, d_G_ptr_, d_eConnectivity_ptr_, d_eParentIdx_ptr_, d_activeIdx_G_ptr_, activeSize, treeSize_, sampleDim_, agentLength_, numDisc_, d_states);
         
         // move samples from eUnexplored to eOpen.
         thrust::exclusive_scan(d_eUnexplored_.begin(), d_eUnexplored_.end(), d_scanIdx_.begin());
         activeSize = d_scanIdx_[maxSamples_-1];
         (d_eUnexplored_[maxSamples_ - 1]) ? ++activeSize : 0;
-        printDeviceVector(d_eConnectivity_ptr_, 10);
         findInd<<<gridSize, blockSize>>>(maxSamples_, d_eUnexplored_ptr_, d_scanIdx_ptr_, d_activeIdx_ptr_);
+        gridSizeActive = std::min((activeSize + blockSizeActive - 1) / blockSizeActive, 2147483647);
         expandEOpen<<<gridSizeActive, blockSizeActive>>>(d_eUnexplored_ptr_, d_eClosed_ptr_, d_eOpen_ptr_, d_eConnectivity_ptr_, d_activeIdx_ptr_, activeSize, connThresh_);
 
+        // move samples from eOpen to G.
+        thrust::exclusive_scan(d_eOpen_.begin(), d_eOpen_.end(), d_scanIdx_.begin());
+        activeSize = d_scanIdx_[maxSamples_-1];
+        (d_eOpen_[maxSamples_ - 1]) ? ++activeSize : 0;
+        findInd<<<gridSize, blockSize>>>(maxSamples_, d_eOpen_ptr_, d_scanIdx_ptr_, d_activeIdx_ptr_);
+        gridSizeActive = std::min((activeSize + blockSizeActive - 1) / blockSizeActive, 2147483647);
+        expandG<<<gridSizeActive, blockSizeActive>>>(d_eOpen_ptr_, d_G_ptr_, d_eConnectivity_ptr_, d_activeIdx_ptr_, activeSize, connThresh_);
 
+        treeSize_ += 1;
         cudaMemcpy(&costGoal_, d_costGoal, sizeof(float), cudaMemcpyDeviceToHost);
     }
 
     double t_kgmt = (std::clock() - t_kgmtStart) / (double) CLOCKS_PER_SEC;
     std::cout << "time inside KGMT is " << t_kgmt << std::endl;
+
+    // move vectors to csv to be plotted.
+    copyAndWriteVectorToCSV(d_samples_, "samples.csv", maxSamples_, sampleDim_);
+    copyAndWriteVectorToCSV(d_eParentIdx_, "parentRelations.csv", maxSamples_, 1);
+
+    // Free the allocated memory for curand states
+    cudaFree(d_states);
 }
 
 __global__
@@ -101,7 +124,7 @@ void findInd(int numSamples, bool* S, int* scanIdx, int* activeS){
 // TODO: Possibly make x0 a shared memory variable and all threads in a block propagate the same sample.
 // Can I make the memory access of samples coalesced? All G nodes are next to eachother in samples.
 __global__
-void propagateG(float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc){
+void propagateG(float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* eParentIDx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= activeSize_G)
         return;
@@ -110,12 +133,14 @@ void propagateG(float* samples, bool* eUnexplored, bool* eClosed, bool* G, float
         float* x0 = &samples[x0Idx * sampleDim];
         float* x1 = &samples[treeSize * sampleDim];
         int x1Index = treeSize + tid;
-        propagateState(x0, x1, numDisc, x1Index, agentLength);
+        curandState state = states[tid];
+        propagateState(x0, x1, numDisc, x1Index, agentLength, &state);
         eConn[x1Index] = calculateConnectivity(x1);
-        printf("X1 INDEX: %d, X1 CONN: %f\n", x1Index, eConn[x1Index]);
         eUnexplored[x1Index] = true;
-        eClosed[x0Idx] = true; // TODO: Do I need to do this? Possibly remove eClosed and just use G.
+        eClosed[x0Idx] = true;  // TODO: Do I need to do this? Possibly remove eClosed and just use G.
         G[x0Idx] = false;
+        eParentIDx[x1Index] = x0Idx;
+        states[tid] = state;
     }
 }
 
@@ -125,10 +150,8 @@ void expandEOpen(bool* eUnexplored, bool* eClosed, bool* eOpen, float* eConn, in
     if (tid >= size_activeEUnexplored)
         return;
     int xIDx = activeEUnexplored_Idx[tid];
-    printf("Sample %d has connectivity %d\n", xIDx, eConn[xIDx]);
     if(eUnexplored[xIDx]){
         if(eConn[xIDx] > connThresh){
-            printf("Sample %d has connectivity %d\n", xIDx, eConn[xIDx]);
             eOpen[xIDx] = true;
             eUnexplored[xIDx] = false;
             return;
@@ -138,29 +161,62 @@ void expandEOpen(bool* eUnexplored, bool* eClosed, bool* eOpen, float* eConn, in
     }
 }
 
+// TODO: Make this only add certain number of samples to G. S.T each block can handle prop of a single g in G.
+__global__
+void expandG(bool* eOpen, bool* G, float* eConn, int* activeEOpen_Idx, int size_activeEOpen, float connThresh){
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= size_activeEOpen)
+        return;
+    int xIDx = activeEOpen_Idx[tid];
+    if(eOpen[xIDx]){
+        if(eConn[xIDx] > connThresh){
+            G[xIDx] = true;
+            eOpen[xIDx] = false;
+            return;
+        }
+    }
+}
+
+__global__ void initCurandStates(curandState* states, int numStates, int seed) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= numStates)
+        return;
+    curand_init(seed, tid, 0, &states[tid]);
+}
+
 __device__
-void propagateState(float* x0, float* x1, int numDisc, int x1Index, float agentLength){
-    // Seed random number generator
-    curandState state;
-    curand_init(x1Index, 0, 0, &state);
-
+void propagateState(float* x0, float* x1, int numDisc, int x1Index, float agentLength, curandState* state){
     // Generate random controls
-    x1[4] = curand_uniform(&state) * 5.0f - 2.5f;  // Scale to range [-2.5, 2.5]
-    x1[5] = curand_uniform(&state) * M_PI - M_PI / 2;  // Scale to range [-pi/2, pi/2]
-    x1[6] = curand_uniform(&state) * 0.3f;  // Scale to range [0, .3]
+    float a = curand_uniform(state) * 5.0f - 2.5f;  // Scale to range [-2.5, 2.5]
+    float steering = curand_uniform(state) * M_PI - M_PI / 2;  // Scale to range [-pi/2, pi/2]
+    float duration = curand_uniform(state) * 0.3f;  // Scale to range [0, .3]
 
-    float dt = x1[6] / numDisc;
-    x1[0] = x0[0];
-    x1[1] = x0[1];
-    x1[2] = x0[2];
-    x1[3] = x0[3];
+    float dt = duration / numDisc;
+    float x = x0[0];
+    float y = x0[1];
+    float theta = x0[2];
+    float v = x0[3];
+
+    float cos_theta, sin_theta, tan_steering;
 
     for (int i = 0; i < numDisc; i++) {
-        x1[0] = x1[0] + x1[3] * cosf(x1[2]) * dt;
-        x1[1] = x1[1] + x1[3] * sinf(x1[2]) * dt;
-        x1[2] = x1[2] + x1[3] / agentLength * tanf(x1[5]) * dt;
-        x1[3] = x1[3] + x1[4] * dt;
+        cos_theta = cosf(theta);
+        sin_theta = sinf(theta);
+        tan_steering = tanf(steering);
+
+        x += v * cos_theta * dt;
+        y += v * sin_theta * dt;
+        theta += (v / agentLength) * tan_steering * dt;
+        v += a * dt;
     }
+
+    x1[0] = x;
+    x1[1] = y;
+    x1[2] = theta;
+    x1[3] = v;
+    x1[4] = a;
+    x1[5] = steering;
+    x1[6] = duration;
 }
 
 // TODO: Implement this function.
