@@ -15,21 +15,25 @@
 #define STATE_DIM 4
 #define BLOCK_SIZE 32
 
-KGMT::KGMT(float width, float height, int N, int numIterations, int maxSamples, int numDisc, int sampleDim, float agentLength):
-    width_(width), height_(height), N_(N), numIterations_(numIterations), maxSamples_(maxSamples), numDisc_(numDisc), sampleDim_(sampleDim), agentLength_(agentLength){
+KGMT::KGMT(float width, float height, int N, int numIterations, int maxTreeSize, int maxSampleSize, int numDisc, int sampleDim, float agentLength):
+    width_(width), height_(height), N_(N), numIterations_(numIterations), maxTreeSize_(maxTreeSize), maxSampleSize_(maxSampleSize), numDisc_(numDisc), sampleDim_(sampleDim), agentLength_(agentLength){
 
-    d_eOpen_ = thrust::device_vector<bool>(maxSamples);
-    d_eClosed_ = thrust::device_vector<bool>(maxSamples);
-    d_G_ = thrust::device_vector<bool>(maxSamples);
-    d_eUnexplored_ = thrust::device_vector<bool>(maxSamples);
-    d_edges_ = thrust::device_vector<int>(maxSamples);
-    d_scanIdx_ = thrust::device_vector<int>(maxSamples);
-    d_activeGIdx_ = thrust::device_vector<int>(maxSamples);
-    d_activeIdx_ = thrust::device_vector<int>(maxSamples);
-    d_eParentIdx_ = thrust::device_vector<int>(maxSamples);
-    d_samples_ = thrust::device_vector<float>(maxSamples * sampleDim);
-    d_eConnectivity_ = thrust::device_vector<float>(maxSamples);
+    d_eOpen_ = thrust::device_vector<bool>(maxTreeSize);
+    d_eClosed_ = thrust::device_vector<bool>(maxTreeSize);
+    d_G_ = thrust::device_vector<bool>(maxTreeSize);
+    d_eUnexplored_ = thrust::device_vector<bool>(maxTreeSize);
+    d_activeU_ = thrust::device_vector<bool>(maxTreeSize);
+    d_edges_ = thrust::device_vector<int>(maxTreeSize);
+    d_scanIdx_ = thrust::device_vector<int>(maxTreeSize);
+    d_activeGIdx_ = thrust::device_vector<int>(maxTreeSize);
+    d_activeIdx_ = thrust::device_vector<int>(maxTreeSize);
+    d_eParentIdx_ = thrust::device_vector<int>(maxTreeSize);
+    d_samples_ = thrust::device_vector<float>(maxTreeSize * sampleDim);
+    d_eConnectivity_ = thrust::device_vector<float>(maxTreeSize);
     d_xGoal_ = thrust::device_vector<float>(sampleDim);
+    d_uSamples_ = thrust::device_vector<float>(maxSampleSize * sampleDim);
+    d_uParentIdx_ = thrust::device_vector<int>(maxSampleSize);
+    d_uConn_ = thrust::device_vector<float>(maxSampleSize);
 
     d_eOpen_ptr_ = thrust::raw_pointer_cast(d_eOpen_.data());
     d_eUnexplored_ptr_ = thrust::raw_pointer_cast(d_eUnexplored_.data());
@@ -42,6 +46,11 @@ KGMT::KGMT(float width, float height, int N, int numIterations, int maxSamples, 
     d_eConnectivity_ptr_ = thrust::raw_pointer_cast(d_eConnectivity_.data());
     d_eParentIdx_ptr_ = thrust::raw_pointer_cast(d_eParentIdx_.data());
     d_xGoal_ptr_ = thrust::raw_pointer_cast(d_xGoal_.data());
+    d_uSamples_ptr_ = thrust::raw_pointer_cast(d_uSamples_.data());
+    d_uParentIdx_ptr_ = thrust::raw_pointer_cast(d_uParentIdx_.data());
+    d_uConn_ptr_ = thrust::raw_pointer_cast(d_uConn_.data());
+    d_activeU_ptr_ = thrust::raw_pointer_cast(d_activeU_.data());
+    
 
     cudaMalloc(&d_costGoal, sizeof(float));
     thrust::fill(d_eParentIdx_.begin(), d_eParentIdx_.end(), -1);
@@ -60,53 +69,38 @@ void KGMT::plan(float* initial, float* goal) {
     cudaMemcpy(d_xGoal_ptr_, goal, sampleDim_ * sizeof(float), cudaMemcpyHostToDevice);
     
     const int blockSize = 128;
-	const int gridSize = std::min((maxSamples_ + blockSize - 1) / blockSize, 2147483647);
+	const int gridSize = std::min((maxTreeSize_ + blockSize - 1) / blockSize, 2147483647);
     int gridSizeActive = 1;
     const int blockSizeActive = 32;
 
     // initialize random seed for curand
     curandState* d_states;
-    cudaMalloc(&d_states, maxSamples_ * sizeof(curandState));
-    initCurandStates<<<(maxSamples_ + blockSize - 1) / blockSize, blockSize>>>(d_states, maxSamples_, time(NULL));
+    cudaMalloc(&d_states, maxTreeSize_ * sizeof(curandState));
+    initCurandStates<<<(maxTreeSize_ + blockSize - 1) / blockSize, blockSize>>>(d_states, maxTreeSize_, time(NULL));
 
     int itr = 0;
     treeSize_ = 1;
-    connThresh_ = 0.0;
     int activeSize = 0;
 
     while(itr < numIterations_){
         itr++;
-
-        // find total number of samples in G.
+        // Propagate G:
         thrust::exclusive_scan(d_G_.begin(), d_G_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
-        activeSize = d_scanIdx_[maxSamples_-1];
-        (d_G_[maxSamples_ - 1]) ? ++activeSize : 0;
+        activeSize = d_scanIdx_[maxTreeSize_-1];
+        (d_G_[maxTreeSize_ - 1]) ? ++activeSize : 0;
+        findInd<<<gridSize, blockSize>>>(maxTreeSize_, d_G_ptr_, d_scanIdx_ptr_, d_activeIdx_G_ptr_);
+        gridSizeActive = std::min(activeSize, 32);
+        propagateG<<<gridSizeActive, blockSizeActive>>>(d_xGoal_ptr_, d_uSamples_ptr_, d_samples_ptr_, d_activeU_ptr_, d_eClosed_ptr_, d_G_ptr_, d_uConn_ptr_, d_uParentIdx_ptr_, d_activeIdx_G_ptr_, activeSize, treeSize_, sampleDim_, agentLength_, numDisc_, d_states, connThresh_);
 
-        // find indices of active samples in G.
-        findInd<<<gridSize, blockSize>>>(maxSamples_, d_G_ptr_, d_scanIdx_ptr_, d_activeIdx_G_ptr_);
-
-        // expand active samples in G. Add new samples to eUnexplored.
-        // gridSizeActive = std::min((activeSize + blockSizeActive - 1) / blockSizeActive, 16);
-        gridSizeActive = 512;
-        propagateG<<<gridSizeActive, blockSizeActive>>>(d_xGoal_ptr_, d_samples_ptr_, d_eUnexplored_ptr_, d_eClosed_ptr_, d_G_ptr_, d_eConnectivity_ptr_, d_eParentIdx_ptr_, d_activeIdx_G_ptr_, activeSize, treeSize_, sampleDim_, agentLength_, numDisc_, d_states);
-        
-        // move samples from eUnexplored to eOpen.
-        thrust::exclusive_scan(d_eUnexplored_.begin(), d_eUnexplored_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
-        activeSize = d_scanIdx_[maxSamples_-1];
-        (d_eUnexplored_[maxSamples_ - 1]) ? ++activeSize : 0;
-        findInd<<<gridSize, blockSize>>>(maxSamples_, d_eUnexplored_ptr_, d_scanIdx_ptr_, d_activeIdx_ptr_);
+        // Find New G:
+        thrust::exclusive_scan(d_activeU_.begin(), d_activeU_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
+        activeSize = d_scanIdx_[maxTreeSize_-1];
+        (d_activeU_[maxTreeSize_ - 1]) ? ++activeSize : 0;
+        findInd<<<gridSize, blockSize>>>(maxTreeSize_, d_activeU_ptr_, d_scanIdx_ptr_, d_activeIdx_ptr_);
         gridSizeActive = std::min((activeSize + blockSizeActive - 1) / blockSizeActive, 2147483647);
-        expandEOpen<<<gridSizeActive, blockSizeActive>>>(d_eUnexplored_ptr_, d_eClosed_ptr_, d_eOpen_ptr_, d_eConnectivity_ptr_, d_activeIdx_ptr_, activeSize, connThresh_);
-
-        // move samples from eOpen to G.
-        thrust::exclusive_scan(d_eOpen_.begin(), d_eOpen_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
-        activeSize = d_scanIdx_[maxSamples_-1];
-        (d_eOpen_[maxSamples_ - 1]) ? ++activeSize : 0;
-        findInd<<<gridSize, blockSize>>>(maxSamples_, d_eOpen_ptr_, d_scanIdx_ptr_, d_activeIdx_ptr_);
-        gridSizeActive = std::min((activeSize + blockSizeActive - 1) / blockSizeActive, 2147483647);
-        expandG<<<gridSizeActive, blockSizeActive>>>(d_eOpen_ptr_, d_G_ptr_, d_eConnectivity_ptr_, d_activeIdx_ptr_, activeSize, connThresh_);
-
+        expandG<<<gridSizeActive, blockSizeActive>>>(d_samples_ptr_, d_uSamples_ptr_, d_activeIdx_ptr_, d_uParentIdx_ptr_, d_eParentIdx_ptr_, d_G_ptr_, d_activeU_ptr_, activeSize, treeSize_);
         treeSize_ += gridSizeActive * blockSizeActive;
+
         // treeSize_ += 1;
         cudaMemcpy(&costGoal_, d_costGoal, sizeof(float), cudaMemcpyDeviceToHost);
     }
@@ -115,13 +109,13 @@ void KGMT::plan(float* initial, float* goal) {
     std::cout << "time inside KGMT is " << t_kgmt << std::endl;
 
     // move vectors to csv to be plotted.
-    copyAndWriteVectorToCSV(d_samples_, "samples.csv", maxSamples_, sampleDim_);
-    copyAndWriteVectorToCSV(d_eParentIdx_, "parentRelations.csv", maxSamples_, 1);
-    copyAndWriteVectorToCSV(d_eUnexplored_, "unexplored.csv", maxSamples_, 1);
-    copyAndWriteVectorToCSV(d_eOpen_, "open.csv", maxSamples_, 1);
-    copyAndWriteVectorToCSV(d_eClosed_, "closed.csv", maxSamples_, 1);
-    copyAndWriteVectorToCSV(d_G_, "G.csv", maxSamples_, 1);
-    copyAndWriteVectorToCSV(d_eConnectivity_, "connectivity.csv", maxSamples_, 1);
+    copyAndWriteVectorToCSV(d_samples_, "samples.csv", maxTreeSize_, sampleDim_);
+    copyAndWriteVectorToCSV(d_eParentIdx_, "parentRelations.csv", maxTreeSize_, 1);
+    copyAndWriteVectorToCSV(d_eUnexplored_, "unexplored.csv", maxTreeSize_, 1);
+    copyAndWriteVectorToCSV(d_eOpen_, "open.csv", maxTreeSize_, 1);
+    copyAndWriteVectorToCSV(d_eClosed_, "closed.csv", maxTreeSize_, 1);
+    copyAndWriteVectorToCSV(d_G_, "G.csv", maxTreeSize_, 1);
+    copyAndWriteVectorToCSV(d_eConnectivity_, "connectivity.csv", maxTreeSize_, 1);
 
     // Free the allocated memory for curand states
     cudaFree(d_states);
@@ -138,33 +132,9 @@ void findInd(int numSamples, bool* S, int* scanIdx, int* activeS){
     activeS[scanIdx[node]] = node;
 }
 
-// TODO: Possibly make x0 a shared memory variable and all threads in a block propagate the same sample.
-// Can I make the memory access of samples coalesced? All G nodes are next to eachother in samples.
-// Extends one sample per sample in G.
-// __global__
-// void propagateG(float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* eParentIDx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states) {
-//     int tid = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (tid >= activeSize_G)
-//         return;
-//     int x0Idx = activeIdx_G[tid];
-//     if(G[x0Idx]){
-//         float* x0 = &samples[x0Idx * sampleDim];
-//         float* x1 = &samples[treeSize * sampleDim];
-//         int x1Index = treeSize + tid;
-//         curandState state = states[tid];
-//         propagateState(x0, x1, numDisc, x1Index, agentLength, &state);
-//         eConn[x1Index] = calculateConnectivity(x1);
-//         eUnexplored[x1Index] = true;
-//         eClosed[x0Idx] = true;  // TODO: Do I need to do this? Possibly remove eClosed and just use G.
-//         G[x0Idx] = false;
-//         eParentIDx[x1Index] = x0Idx;
-//         states[tid] = state;
-//     }
-// }
-
 // Extends blockDim.x samples per sample in G.
 __global__
-void propagateG(float* xGoal, float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* eParentIDx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states) {
+void propagateG(float* xGoal, float* uSamples, float* samples, bool* activeU, bool* eClosed, bool* G, float* uConn, int* uParentIdx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states, float connThresh) {
     
     if (blockIdx.x >= activeSize_G)
         return;
@@ -183,15 +153,15 @@ void propagateG(float* xGoal, float* samples, bool* eUnexplored, bool* eClosed, 
             s_xGoal[threadIdx.x] = xGoal[threadIdx.x];
         }
         __syncthreads();
-        float* x1 = &samples[treeSize * sampleDim + tid * sampleDim];
-        int x1Index = treeSize + tid;
-
+        float* x1 = &uSamples[tid * sampleDim];
         curandState state = states[tid];
         propagateState(x0, x1, numDisc, agentLength, &state);
-        eConn[x1Index] = calculateConnectivity(x1, s_xGoal);
-        eUnexplored[x1Index] = true;
-        eParentIDx[x1Index] = x0Idx;
+        uConn[tid] = calculateConnectivity(x1, s_xGoal);
         states[tid] = state;
+        if(uConn[tid] > connThresh){
+            uParentIdx[tid] = x0Idx;
+            activeU[tid] = true;
+        }
         if (threadIdx.x == 0) {
             eClosed[x0Idx] = true;  // TODO: Possibly remove eClosed and just use G.
             G[x0Idx] = false;
@@ -199,71 +169,26 @@ void propagateG(float* xGoal, float* samples, bool* eUnexplored, bool* eClosed, 
     }
 }
 
-// Extends blockDim.x samples per sample in G. Chooses maximum value. Uses parallel reduction.
-// __global__ void propagateG(float* xGoal, float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* eParentIDx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states) {
-//     if (blockIdx.x >= activeSize_G)
-//         return;
-
-//     int tid = blockIdx.x * blockDim.x + threadIdx.x;
-
-//     __shared__ int x0Idx;
-//     __shared__ int x1Index;
-//     if (threadIdx.x == 0) {
-//         x0Idx = activeIdx_G[blockIdx.x];
-//     }
-//     x1Index = treeSize + blockIdx.x * blockDim.x;
-//     __syncthreads();
-
-//     if (!G[x0Idx]) {
-//         return;
-//     }
-
-//     __shared__ float x0[SAMPLE_DIM];
-//     __shared__ float x1s[BLOCK_SIZE * SAMPLE_DIM];
-//     __shared__ float x1Conns[BLOCK_SIZE];
-//     __shared__ int maxIndex[BLOCK_SIZE];
-//     __shared__ float s_xGoal[SAMPLE_DIM];
-
-//     if (threadIdx.x < sampleDim) {
-//         x0[threadIdx.x] = samples[x0Idx * sampleDim + threadIdx.x];
-//         s_xGoal[threadIdx.x] = xGoal[threadIdx.x];
-//     }
-//     __syncthreads();
-
-//     float* x1 = &x1s[threadIdx.x * sampleDim];
-//     curandState state = states[tid];
-//     propagateState(x0, x1, numDisc, agentLength, &state);
-//     states[tid] = state;
-//     x1Conns[threadIdx.x] = calculateConnectivity(x1, s_xGoal);
-//     maxIndex[threadIdx.x] = threadIdx.x;
-//     __syncthreads();
-
-//     for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-//         if (threadIdx.x < stride) {
-//             float lhs = x1Conns[threadIdx.x];
-//             float rhs = x1Conns[threadIdx.x + stride];
-//             if (lhs < rhs) {
-//                 x1Conns[threadIdx.x] = rhs;
-//                 maxIndex[threadIdx.x] = maxIndex[threadIdx.x + stride];
-//             }
-//         }
-//         __syncthreads();
-//     }
-
-//     if (threadIdx.x < sampleDim) {
-//         samples[x1Index * sampleDim + threadIdx.x] = x1s[maxIndex[0] * sampleDim + threadIdx.x];
-//     } else if (threadIdx.x == sampleDim) {
-//         eParentIDx[x1Index] = x0Idx;
-//     } else if (threadIdx.x == sampleDim + 1) {
-//         eClosed[x0Idx] = true;  // TODO: Possibly remove eClosed and just use G.
-//         G[x0Idx] = false;
-//     } else if (threadIdx.x == sampleDim + 2) {
-//         eUnexplored[x1Index] = true;
-//     } else if (threadIdx.x == sampleDim + 3) {
-//         eConn[x1Index] = x1Conns[maxIndex[0]];
-//     }
-// }
-
+__global__ 
+void expandG(float* samples, float* uSamples, int* activeIdx, int* uParentIdx, int* tParentIdx, bool* G, bool* activeU, int activeSize, int treeSize){
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= activeSize)
+        return;
+    int xIDx = activeIdx[tid];
+    if(activeU[xIDx] ){
+        float* x0 = &samples[uParentIdx[xIDx]*SAMPLE_DIM];
+        float* x1 = &uSamples[xIDx*SAMPLE_DIM];
+        if(!inCollision(x0, x1)){
+            int x1Idx = treeSize + tid;
+            for (int i = 0; i < SAMPLE_DIM; i++) {
+                samples[x1Idx * SAMPLE_DIM + i] = x1[i];
+            }
+            G[x1Idx] = true;
+            activeU[xIDx] = false;
+            tParentIdx[x1Idx] = uParentIdx[xIDx];
+        }
+    }
+}
 
 
 __global__
@@ -280,22 +205,6 @@ void expandEOpen(bool* eUnexplored, bool* eClosed, bool* eOpen, float* eConn, in
         }
         eUnexplored[xIDx] = false;
         eClosed[xIDx] = true;
-    }
-}
-
-// TODO: Make this only add certain number of samples to G. S.T each block can handle prop of a single g in G.
-__global__
-void expandG(bool* eOpen, bool* G, float* eConn, int* activeEOpen_Idx, int size_activeEOpen, float connThresh){
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid >= size_activeEOpen)
-        return;
-    int xIDx = activeEOpen_Idx[tid];
-    if(eOpen[xIDx]){
-        if(eConn[xIDx] > connThresh){
-            G[xIDx] = true;
-            eOpen[xIDx] = false;
-            return;
-        }
     }
 }
 
@@ -350,4 +259,9 @@ __device__ float calculateConnectivity(float* x, float* xGoal){
         dist += fabsf(x[i] - xGoal[i]);
     }
     return 100.0f - dist; // TODO: make this not 100.
+}
+
+// TODO: UPDATE THIS
+__device__ bool inCollision(float* x0, float* x1){
+    return false;
 }

@@ -17,12 +17,13 @@ int main(void) {
     float width = 10.0;
     float height = 10.0;
     int N = 100;
-    int numIterations = 10;
-    int maxSamples = 100000;
+    int numIterations = 100;
+    int maxTreeSize = 50000;
+    int maxSampleSize = 20000;
     int numDisc = 10;
     float agentLength = 1.0;
 
-    KGMT kgmt(width, height, N, numIterations, maxSamples, numDisc, sampleDim, agentLength);
+    KGMT kgmt(width, height, N, numIterations, maxTreeSize, maxSampleSize, numDisc, sampleDim, agentLength);
     float* initial = new float[sampleDim];
     float* goal = new float[sampleDim];
     initial[0] = 1;
