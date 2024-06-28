@@ -41,6 +41,7 @@ class KGMT
         thrust::device_vector<int> d_eParentIdx_; // Stores parent sample idx. Ex: d_parentIdx[10] = 3. Parent of sample 3 is 10.
         thrust::device_vector<float> d_eConnectivity_; // Stores connectivty score for each sample. 
         thrust::device_vector<float> d_samples_; // Stores all samples. Size is maxSamples_ * sampleDim_.
+        thrust::device_vector<float> d_xGoal_;
         bool *d_eOpen_ptr_;
         bool *d_eClosed_ptr_;
         bool *d_G_ptr_;
@@ -49,6 +50,7 @@ class KGMT
         float *d_samples_ptr_;
         float *d_costGoal;
         float *d_eConnectivity_ptr_;
+        float *d_xGoal_ptr_;
         int *d_scanIdx_ptr_;
         int *d_activeIdx_G_ptr_; // TODO: Possibly delete.
         int *d_activeIdx_ptr_;
@@ -69,7 +71,7 @@ __global__ void findInd(int numSamples, bool* G, int* scanIdx, int* activeGIdx);
  * Adds new samples to eUnexplored. Calculates connectivity score for new samples. 
  * Moves G samples to eClosed.
  */
-__global__ void propagateG(float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* eParentIDx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states);
+__global__ void propagateG(float* xGoal, float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* eParentIDx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states);
 __global__ void expandEOpen(bool* eUnexplored, bool* eClosed, bool* eOpen, float* eConn, int* activeEUnexplored_Idx, int size_activeEUnexplored, float connThresh);
 __global__ void expandG(bool* eOpen, bool* G, float* eConn, int* activeEOpen_Idx, int size_activeEOpen, float connThresh);
 __global__ void initCurandStates(curandState* states, int numStates, int seed);
@@ -86,4 +88,4 @@ __device__ void propagateState(float* x0, float* x1, int numDisc, float agentLen
  * @brief Calculates connectivity score for a sample.
  *
  */
-__device__ float calculateConnectivity(float* x, curandState* state);
+__device__ float calculateConnectivity(float* x, float* xGoal);
