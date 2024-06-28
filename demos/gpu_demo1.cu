@@ -17,7 +17,7 @@ int main(void) {
     float width = 10.0;
     float height = 10.0;
     int N = 100;
-    int numIterations = 100;
+    int numIterations = 10;
     int maxSamples = 100000;
     int numDisc = 10;
     float agentLength = 1.0;
