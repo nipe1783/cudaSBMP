@@ -203,71 +203,68 @@ void findInd(int numSamples, bool* S, int* scanIdx, int* activeS){
 
 // Extends blockDim.x samples per sample in G. Chooses maximum value. Uses parallel reduction.
 __global__ void propagateG(float* xGoal, float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* eParentIDx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states) {
-    
     if (blockIdx.x >= activeSize_G)
         return;
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;    
+
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
     __shared__ int x0Idx;
     __shared__ int x1Index;
     if (threadIdx.x == 0) {
         x0Idx = activeIdx_G[blockIdx.x];
-        x1Index = treeSize + tid;
+    }
+    x1Index = treeSize + blockIdx.x * blockDim.x;
+    __syncthreads();
+
+    if (!G[x0Idx]) {
+        return;
+    }
+
+    __shared__ float x0[SAMPLE_DIM];
+    __shared__ float x1s[BLOCK_SIZE * SAMPLE_DIM];
+    __shared__ float x1Conns[BLOCK_SIZE];
+    __shared__ int maxIndex[BLOCK_SIZE];
+    __shared__ float s_xGoal[SAMPLE_DIM];
+
+    if (threadIdx.x < sampleDim) {
+        x0[threadIdx.x] = samples[x0Idx * sampleDim + threadIdx.x];
+        s_xGoal[threadIdx.x] = xGoal[threadIdx.x];
     }
     __syncthreads();
 
-    if (G[x0Idx]) {
-        __shared__ float x0[SAMPLE_DIM];
-        __shared__ float x1s[BLOCK_SIZE * SAMPLE_DIM];
-        __shared__ float x1Conns[BLOCK_SIZE];
-        __shared__ int maxIndex[BLOCK_SIZE];
-        __shared__ float s_xGoal[SAMPLE_DIM];
-        
-        if (threadIdx.x < sampleDim) {
-            x0[threadIdx.x] = samples[x0Idx * sampleDim + threadIdx.x];
-            s_xGoal[threadIdx.x] = xGoal[threadIdx.x];
-        }
-        __syncthreads();
+    float* x1 = &x1s[threadIdx.x * sampleDim];
+    curandState state = states[tid];
+    propagateState(x0, x1, numDisc, agentLength, &state);
+    states[tid] = state;
+    x1Conns[threadIdx.x] = calculateConnectivity(x1, s_xGoal);
+    maxIndex[threadIdx.x] = threadIdx.x;
+    __syncthreads();
 
-        float* x1 = &x1s[threadIdx.x * sampleDim];
-        curandState state = states[tid];
-        propagateState(x0, x1, numDisc, agentLength, &state);
-        states[tid] = state;
-        x1Conns[threadIdx.x] = calculateConnectivity(x1, s_xGoal);
-        maxIndex[threadIdx.x] = threadIdx.x;  // Initialize the index array
-        __syncthreads();
-
-        for(int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-            if (threadIdx.x < stride) {
-                float lhs = x1Conns[threadIdx.x];
-                float rhs = x1Conns[threadIdx.x + stride];
-                if (lhs < rhs) {
-                    x1Conns[threadIdx.x] = rhs;
-                    maxIndex[threadIdx.x] = maxIndex[threadIdx.x + stride];
-                }
-            }
-            __syncthreads();
-        }
-
-        if (threadIdx.x < sampleDim) {
-            samples[x1Index * sampleDim + threadIdx.x] = x1s[maxIndex[0] * sampleDim + threadIdx.x];
-        }
-        else if( threadIdx.x >= sampleDim && threadIdx.x < sampleDim + 5){
-            if (threadIdx.x == sampleDim) {
-                eParentIDx[x1Index] = x0Idx;
-            } else if (threadIdx.x == sampleDim + 1) {
-                eClosed[x0Idx] = true;  // TODO: Possibly remove eClosed and just use G.
-            } else if (threadIdx.x == sampleDim + 2) {
-                eUnexplored[x1Index] = true;
-            } else if (threadIdx.x == sampleDim + 3) {
-                eConn[x1Index] = x1Conns[maxIndex[0]];
-            } else if (threadIdx.x == sampleDim + 4) {
-                G[x0Idx] = false;
+    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+        if (threadIdx.x < stride) {
+            float lhs = x1Conns[threadIdx.x];
+            float rhs = x1Conns[threadIdx.x + stride];
+            if (lhs < rhs) {
+                x1Conns[threadIdx.x] = rhs;
+                maxIndex[threadIdx.x] = maxIndex[threadIdx.x + stride];
             }
         }
+        __syncthreads();
+    }
 
+    if (threadIdx.x < sampleDim) {
+        samples[x1Index * sampleDim + threadIdx.x] = x1s[maxIndex[0] * sampleDim + threadIdx.x];
+    } else if (threadIdx.x == sampleDim) {
+        eParentIDx[x1Index] = x0Idx;
+    } else if (threadIdx.x == sampleDim + 1) {
+        eClosed[x0Idx] = true;  // TODO: Possibly remove eClosed and just use G.
+        G[x0Idx] = false;
+    } else if (threadIdx.x == sampleDim + 2) {
+        eUnexplored[x1Index] = true;
+    } else if (threadIdx.x == sampleDim + 3) {
+        eConn[x1Index] = x1Conns[maxIndex[0]];
     }
 }
-
 
 
 
@@ -351,8 +348,8 @@ void propagateState(float* x0, float* x1, int numDisc, float agentLength, curand
 // determines a worth heuristic for the sample based on coverage.
 __device__ float calculateConnectivity(float* x, float* xGoal){
     float dist = 0.0f;
-    for (int i = 0; i < STATE_DIM; ++i) {
+    for (int i = 0; i < STATE_DIM - 2; ++i) { // TODO: currently only checking x and y
         dist += fabsf(x[i] - xGoal[i]);
     }
-    return dist;
+    return 100.0f - dist; // TODO: make this not 100.
 }

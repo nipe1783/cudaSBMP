@@ -52,8 +52,12 @@ target_link_libraries(gpu_demo1
 # Ensure CUDA separable compilation
 set_target_properties(gpu_demo1 PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
-# Suppress specific CUDA warnings
-set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -diag-suppress=20012,20013,20014,20015 --expt-relaxed-constexpr")
+# Suppress specific CUDA warnings and enable detailed information
+set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -diag-suppress=20012,20013,20014,20015 --expt-relaxed-constexpr --ptxas-options=-v")
+
+# Set CUDA architectures
+set_property(TARGET gpu_demo1 PROPERTY CUDA_ARCHITECTURES 52)
+set_property(TARGET parallelSBMP_lib PROPERTY CUDA_ARCHITECTURES 52)
 
 # Suppress all warnings from Eigen
 add_definitions(-DEIGEN_NO_DEBUG)
