@@ -80,10 +80,10 @@ __global__ void initCurandStates(curandState* states, int numStates, int seed);
  * @brief Populates X1 with new sample. 
  *
  */
-__device__ void propagateState(float* x0, float* x1, int numDisc, int x1Index, float agentLength, curandState* state);
+__device__ void propagateState(float* x0, float* x1, int numDisc, float agentLength, curandState* state);
 
 /**
  * @brief Calculates connectivity score for a sample.
  *
  */
-__device__ float calculateConnectivity(float* x);
+__device__ float calculateConnectivity(float* x, curandState* state);

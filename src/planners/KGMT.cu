@@ -11,6 +11,9 @@
 #include <chrono>
 #include <ctime>
 
+#define SAMPLE_DIM 7
+#define BLOCK_SIZE 32
+
 KGMT::KGMT(float width, float height, int N, int numIterations, int maxSamples, int numDisc, int sampleDim, float agentLength):
     width_(width), height_(height), N_(N), numIterations_(numIterations), maxSamples_(maxSamples), numDisc_(numDisc), sampleDim_(sampleDim), agentLength_(agentLength){
 
@@ -70,7 +73,7 @@ void KGMT::plan(float* initial, float* goal) {
         itr++;
 
         // find total number of samples in G.
-        thrust::exclusive_scan(d_G_.begin(), d_G_.end(), d_scanIdx_.begin());
+        thrust::exclusive_scan(d_G_.begin(), d_G_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
         activeSize = d_scanIdx_[maxSamples_-1];
         (d_G_[maxSamples_ - 1]) ? ++activeSize : 0;
 
@@ -78,28 +81,31 @@ void KGMT::plan(float* initial, float* goal) {
         findInd<<<gridSize, blockSize>>>(maxSamples_, d_G_ptr_, d_scanIdx_ptr_, d_activeIdx_G_ptr_);
 
         // expand active samples in G. Add new samples to eUnexplored.
-        // gridSizeActive = std::min((activeSize + blockSizeActive - 1) / blockSizeActive, 2147483647);
-        gridSizeActive = 1;
+        // gridSizeActive = std::min((activeSize + blockSizeActive - 1) / blockSizeActive, 16);
+        gridSizeActive = 2;
+        if(activeSize*blockSizeActive > maxSamples_){
+            std::cout << "Too many samples in G. Exiting." << std::endl;
+            break;
+        }
         propagateG<<<gridSizeActive, blockSizeActive>>>(d_samples_ptr_, d_eUnexplored_ptr_, d_eClosed_ptr_, d_G_ptr_, d_eConnectivity_ptr_, d_eParentIdx_ptr_, d_activeIdx_G_ptr_, activeSize, treeSize_, sampleDim_, agentLength_, numDisc_, d_states);
         
         // move samples from eUnexplored to eOpen.
-        thrust::exclusive_scan(d_eUnexplored_.begin(), d_eUnexplored_.end(), d_scanIdx_.begin());
+        thrust::exclusive_scan(d_eUnexplored_.begin(), d_eUnexplored_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
         activeSize = d_scanIdx_[maxSamples_-1];
         (d_eUnexplored_[maxSamples_ - 1]) ? ++activeSize : 0;
-        printDeviceVector(d_eUnexplored_ptr_, 100);
-        printDeviceVector(d_scanIdx_ptr_, 100);
         findInd<<<gridSize, blockSize>>>(maxSamples_, d_eUnexplored_ptr_, d_scanIdx_ptr_, d_activeIdx_ptr_);
         gridSizeActive = std::min((activeSize + blockSizeActive - 1) / blockSizeActive, 2147483647);
         expandEOpen<<<gridSizeActive, blockSizeActive>>>(d_eUnexplored_ptr_, d_eClosed_ptr_, d_eOpen_ptr_, d_eConnectivity_ptr_, d_activeIdx_ptr_, activeSize, connThresh_);
 
         // move samples from eOpen to G.
-        thrust::exclusive_scan(d_eOpen_.begin(), d_eOpen_.end(), d_scanIdx_.begin());
+        thrust::exclusive_scan(d_eOpen_.begin(), d_eOpen_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
         activeSize = d_scanIdx_[maxSamples_-1];
         (d_eOpen_[maxSamples_ - 1]) ? ++activeSize : 0;
         findInd<<<gridSize, blockSize>>>(maxSamples_, d_eOpen_ptr_, d_scanIdx_ptr_, d_activeIdx_ptr_);
         gridSizeActive = std::min((activeSize + blockSizeActive - 1) / blockSizeActive, 2147483647);
         expandG<<<gridSizeActive, blockSizeActive>>>(d_eOpen_ptr_, d_G_ptr_, d_eConnectivity_ptr_, d_activeIdx_ptr_, activeSize, connThresh_);
 
+        // treeSize_ += gridSizeActive * blockSizeActive; TODO: Fix this
         treeSize_ += 1;
         cudaMemcpy(&costGoal_, d_costGoal, sizeof(float), cudaMemcpyDeviceToHost);
     }
@@ -107,13 +113,14 @@ void KGMT::plan(float* initial, float* goal) {
     double t_kgmt = (std::clock() - t_kgmtStart) / (double) CLOCKS_PER_SEC;
     std::cout << "time inside KGMT is " << t_kgmt << std::endl;
 
-    printDeviceVector(d_eUnexplored_ptr_, 100);
-    printDeviceVector(d_eConnectivity_ptr_, 100);
-    printDeviceVector(d_eOpen_ptr_, 100);
-
     // move vectors to csv to be plotted.
     copyAndWriteVectorToCSV(d_samples_, "samples.csv", maxSamples_, sampleDim_);
     copyAndWriteVectorToCSV(d_eParentIdx_, "parentRelations.csv", maxSamples_, 1);
+    copyAndWriteVectorToCSV(d_eUnexplored_, "unexplored.csv", maxSamples_, 1);
+    copyAndWriteVectorToCSV(d_eOpen_, "open.csv", maxSamples_, 1);
+    copyAndWriteVectorToCSV(d_eClosed_, "closed.csv", maxSamples_, 1);
+    copyAndWriteVectorToCSV(d_G_, "G.csv", maxSamples_, 1);
+    copyAndWriteVectorToCSV(d_eConnectivity_, "connectivity.csv", maxSamples_, 1);
 
     // Free the allocated memory for curand states
     cudaFree(d_states);
@@ -132,6 +139,7 @@ void findInd(int numSamples, bool* S, int* scanIdx, int* activeS){
 
 // TODO: Possibly make x0 a shared memory variable and all threads in a block propagate the same sample.
 // Can I make the memory access of samples coalesced? All G nodes are next to eachother in samples.
+// Extends one sample per sample in G.
 // __global__
 // void propagateG(float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* eParentIDx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states) {
 //     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -153,39 +161,110 @@ void findInd(int numSamples, bool* S, int* scanIdx, int* activeS){
 //     }
 // }
 
-__global__
-void propagateG(float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* eParentIDx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states) {
+// Extends blockDim.x samples per sample in G.
+// __global__
+// void propagateG(float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* eParentIDx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states) {
     
-    if (blockIdx.x > activeSize_G)
-        return;
+//     if (blockIdx.x >= activeSize_G)
+//         return;
 
+//     int tid = blockIdx.x * blockDim.x + threadIdx.x;    
+//     __shared__ int x0Idx;
+//     if (threadIdx.x == 0) {
+//         x0Idx = activeIdx_G[blockIdx.x];
+//     }
+//     __syncthreads();
+//     if (G[x0Idx]) {
+//         __shared__ float x0[7];
+//         if (threadIdx.x < sampleDim) {
+//             x0[threadIdx.x] = samples[x0Idx * sampleDim + threadIdx.x];
+//         }
+//         __syncthreads();
+//         float* x1 = &samples[treeSize * sampleDim + tid * sampleDim];
+//         int x1Index = treeSize + tid;
+
+//         curandState state = states[tid];
+//         propagateState(x0, x1, numDisc, x1Index, agentLength, &state);
+//         eConn[x1Index] = calculateConnectivity(x1);
+//         eUnexplored[x1Index] = true;
+//         eParentIDx[x1Index] = x0Idx;
+//         states[tid] = state;
+//         if (threadIdx.x == 0) {
+//             eClosed[x0Idx] = true;  // TODO: Possibly remove eClosed and just use G.
+//             G[x0Idx] = false;
+//         }
+//     }
+// }
+
+// Extends blockDim.x samples per sample in G. Chooses maximum value. Uses parallel reduction.
+__global__ void propagateG(float* samples, bool* eUnexplored, bool* eClosed, bool* G, float* eConn, int* eParentIDx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states) {
+    
+    if (blockIdx.x >= activeSize_G)
+        return;
     int tid = blockIdx.x * blockDim.x + threadIdx.x;    
     __shared__ int x0Idx;
+    __shared__ int x1Index;
     if (threadIdx.x == 0) {
         x0Idx = activeIdx_G[blockIdx.x];
+        x1Index = treeSize + tid;
     }
     __syncthreads();
+
     if (G[x0Idx]) {
-        __shared__ float x0[7];
+        __shared__ float x0[SAMPLE_DIM];
+        __shared__ float x1s[BLOCK_SIZE * SAMPLE_DIM];
+        __shared__ float x1Conns[BLOCK_SIZE];
+        __shared__ int maxIndex[BLOCK_SIZE];
+        
+        
         if (threadIdx.x < sampleDim) {
             x0[threadIdx.x] = samples[x0Idx * sampleDim + threadIdx.x];
         }
         __syncthreads();
-        float* x1 = &samples[treeSize * sampleDim + tid * sampleDim];
-        int x1Index = treeSize + tid;
 
+        float* x1 = &x1s[threadIdx.x * sampleDim];
         curandState state = states[tid];
-        propagateState(x0, x1, numDisc, x1Index, agentLength, &state);
-        eConn[x1Index] = calculateConnectivity(x1);
-        eUnexplored[x1Index] = true;
-        eParentIDx[x1Index] = x0Idx;
+        propagateState(x0, x1, numDisc, agentLength, &state);
         states[tid] = state;
-        if (threadIdx.x == 0) {
-            eClosed[x0Idx] = true;  // TODO: Possibly remove eClosed and just use G.
-            G[x0Idx] = false;
+        x1Conns[threadIdx.x] = calculateConnectivity(x1, &state);
+        maxIndex[threadIdx.x] = threadIdx.x;  // Initialize the index array
+        __syncthreads();
+
+        for(int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+            if (threadIdx.x < stride) {
+                float lhs = x1Conns[threadIdx.x];
+                float rhs = x1Conns[threadIdx.x + stride];
+                if (lhs < rhs) {
+                    x1Conns[threadIdx.x] = rhs;
+                    maxIndex[threadIdx.x] = maxIndex[threadIdx.x + stride];
+                }
+            }
+            __syncthreads();
         }
+
+        if (threadIdx.x < sampleDim) {
+            samples[x1Index * sampleDim + threadIdx.x] = x1s[maxIndex[0] * sampleDim + threadIdx.x];
+        }
+        else if( threadIdx.x >= sampleDim && threadIdx.x < sampleDim + 5){
+            if (threadIdx.x == sampleDim) {
+                eParentIDx[x1Index] = x0Idx;
+            } else if (threadIdx.x == sampleDim + 1) {
+                eClosed[x0Idx] = true;  // TODO: Possibly remove eClosed and just use G.
+            } else if (threadIdx.x == sampleDim + 2) {
+                eUnexplored[x1Index] = true;
+            } else if (threadIdx.x == sampleDim + 3) {
+                eConn[x1Index] = x1Conns[maxIndex[0]];
+            } else if (threadIdx.x == sampleDim + 4) {
+                G[x0Idx] = false;
+            }
+        }
+
     }
 }
+
+
+
+
 __global__
 void expandEOpen(bool* eUnexplored, bool* eClosed, bool* eOpen, float* eConn, int* activeEUnexplored_Idx, int size_activeEUnexplored, float connThresh){
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -227,11 +306,11 @@ __global__ void initCurandStates(curandState* states, int numStates, int seed) {
 }
 
 __device__
-void propagateState(float* x0, float* x1, int numDisc, int x1Index, float agentLength, curandState* state){
+void propagateState(float* x0, float* x1, int numDisc, float agentLength, curandState* state){
     // Generate random controls
     float a = curand_uniform(state) * 5.0f - 2.5f;  // Scale to range [-2.5, 2.5]
     float steering = curand_uniform(state) * M_PI - M_PI / 2;  // Scale to range [-pi/2, pi/2]
-    float duration = curand_uniform(state) * 0.3f;  // Scale to range [0, .3]
+    float duration = curand_uniform(state) * 0.2f + 0.6f;  // Scale to range [0.2, 0.6]
 
     float dt = duration / numDisc;
     float x = x0[0];
@@ -264,6 +343,6 @@ void propagateState(float* x0, float* x1, int numDisc, int x1Index, float agentL
 // TODO: Implement this function.
 // input is a sample x, output is the connectivity of the sample.
 // determines a worth heuristic for the sample based on coverage.
-__device__ float calculateConnectivity(float* x){
-    return 20.0;
+__device__ float calculateConnectivity(float* x, curandState* state){
+    return curand_uniform(state) * 20.0f;  // Scale to range [0, .3]
 }
