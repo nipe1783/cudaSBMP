@@ -27,43 +27,32 @@ class KGMT
         float width_; // Width of the workspace
         float height_; // Height of the workspace
         float cellSize_; // Size of each cell in the workspace grid
-        float costGoal_; // Cost of the goal state
+        float costToGoal_; // Cost of the goal state
         float agentLength_; // Length of the agent. Used in state propagation.
         float connThresh_;
-        OccupancyGrid grid_; // Workspace grid.
-        thrust::device_vector<bool> d_eOpen_; // True if sample is part of open samples to possibly be added to G.
-        thrust::device_vector<bool> d_eClosed_; // Already been expanded by G or cost is too high.
         thrust::device_vector<bool> d_G_; // Set of samples to be expanded in current iteration.
-        thrust::device_vector<bool> d_edges_; // TODO: Delete this. Not used.
-        thrust::device_vector<bool> d_eUnexplored_; // Set of samples created by an iteration of G. To be added to vOpen or discarded.
         thrust::device_vector<bool> d_activeU_;
         thrust::device_vector<int> d_scanIdx_; // stores scan of G. ex: G = [0, 1, 0, 1, 1, 0, 1] -> scanIdx = [0,0,1,1,2,3,3]. Used to find active samples in G.
-        thrust::device_vector<int> d_activeGIdx_; // Used to store indeces that are true in G. ex [1,3,5] means samples 1,3,5 are in G.
         thrust::device_vector<int> d_activeIdx_;
         thrust::device_vector<int> d_eParentIdx_; // Stores parent sample idx. Ex: d_parentIdx[10] = 3. Parent of sample 3 is 10.
         thrust::device_vector<int> d_uParentIdx_; // stores parent indeces for current unexplored iteration.
         thrust::device_vector<float> d_uConn_;
-        thrust::device_vector<float> d_eConnectivity_; // Stores connectivty score for each sample. 
         thrust::device_vector<float> d_samples_; // Stores all samples. Size is maxSamples_ * sampleDim_.
         thrust::device_vector<float> d_uSamples_; // all unexplored samples of current iteration.
         thrust::device_vector<float> d_xGoal_;
-        bool *d_eOpen_ptr_;
-        bool *d_eClosed_ptr_;
         bool *d_G_ptr_;
-        bool *d_edges_ptr_;
-        bool *d_eUnexplored_ptr_;
         bool *d_activeU_ptr_;
-        float *d_samples_ptr_;
-        float *d_costGoal;
-        float *d_eConnectivity_ptr_;
-        float *d_xGoal_ptr_;
-        float *d_uSamples_ptr_;
-        float *d_uConn_ptr_;
         int *d_scanIdx_ptr_;
-        int *d_activeIdx_G_ptr_; // TODO: Possibly delete.
         int *d_activeIdx_ptr_;
         int *d_eParentIdx_ptr_;
         int *d_uParentIdx_ptr_;
+        float *d_uConn_ptr_;
+        float *d_samples_ptr_;
+        float *d_xGoal_ptr_;
+        float *d_uSamples_ptr_;
+        float *d_costToGoal;
+        
+        
         
 
         
@@ -82,7 +71,7 @@ __global__ void findInd(int numSamples, bool* G, int* scanIdx, int* activeGIdx);
  * Adds new samples to eUnexplored. Calculates connectivity score for new samples. 
  * Moves G samples to eClosed.
  */
-__global__ void propagateG(float* xGoal, float* uSamples, float* samples, bool* activeU, bool* eClosed, bool* G, float* uConn, int* uParentIdx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states, float connThresh);
+__global__ void propagateG(float* xGoal, float* uSamples, float* samples, bool* activeU, bool* G, float* uConn, int* uParentIdx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states, float connThresh);
 __global__ void expandEOpen(bool* eUnexplored, bool* eClosed, bool* eOpen, float* eConn, int* activeEUnexplored_Idx, int size_activeEUnexplored, float connThresh);
 __global__ void expandG(float* samples, float* uSamples, int* activeIdx, int* uParentIdx, int* tParentIdx, bool* G, bool* activeU, int activeSize, int treeSize);
 __global__ void initCurandStates(curandState* states, int numStates, int seed);

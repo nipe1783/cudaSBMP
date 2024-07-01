@@ -18,32 +18,21 @@
 KGMT::KGMT(float width, float height, int N, int numIterations, int maxTreeSize, int maxSampleSize, int numDisc, int sampleDim, float agentLength):
     width_(width), height_(height), N_(N), numIterations_(numIterations), maxTreeSize_(maxTreeSize), maxSampleSize_(maxSampleSize), numDisc_(numDisc), sampleDim_(sampleDim), agentLength_(agentLength){
 
-    d_eOpen_ = thrust::device_vector<bool>(maxTreeSize);
-    d_eClosed_ = thrust::device_vector<bool>(maxTreeSize);
     d_G_ = thrust::device_vector<bool>(maxTreeSize);
-    d_eUnexplored_ = thrust::device_vector<bool>(maxTreeSize);
     d_activeU_ = thrust::device_vector<bool>(maxTreeSize);
-    d_edges_ = thrust::device_vector<int>(maxTreeSize);
     d_scanIdx_ = thrust::device_vector<int>(maxTreeSize);
-    d_activeGIdx_ = thrust::device_vector<int>(maxTreeSize);
     d_activeIdx_ = thrust::device_vector<int>(maxTreeSize);
     d_eParentIdx_ = thrust::device_vector<int>(maxTreeSize);
     d_samples_ = thrust::device_vector<float>(maxTreeSize * sampleDim);
-    d_eConnectivity_ = thrust::device_vector<float>(maxTreeSize);
     d_xGoal_ = thrust::device_vector<float>(sampleDim);
     d_uSamples_ = thrust::device_vector<float>(maxSampleSize * sampleDim);
     d_uParentIdx_ = thrust::device_vector<int>(maxSampleSize);
     d_uConn_ = thrust::device_vector<float>(maxSampleSize);
 
-    d_eOpen_ptr_ = thrust::raw_pointer_cast(d_eOpen_.data());
-    d_eUnexplored_ptr_ = thrust::raw_pointer_cast(d_eUnexplored_.data());
-    d_eClosed_ptr_ = thrust::raw_pointer_cast(d_eClosed_.data());
     d_G_ptr_ = thrust::raw_pointer_cast(d_G_.data());
     d_samples_ptr_ = thrust::raw_pointer_cast(d_samples_.data());
     d_scanIdx_ptr_ = thrust::raw_pointer_cast(d_scanIdx_.data());
-    d_activeIdx_G_ptr_ = thrust::raw_pointer_cast(d_activeGIdx_.data());
     d_activeIdx_ptr_ = thrust::raw_pointer_cast(d_activeIdx_.data());
-    d_eConnectivity_ptr_ = thrust::raw_pointer_cast(d_eConnectivity_.data());
     d_eParentIdx_ptr_ = thrust::raw_pointer_cast(d_eParentIdx_.data());
     d_xGoal_ptr_ = thrust::raw_pointer_cast(d_xGoal_.data());
     d_uSamples_ptr_ = thrust::raw_pointer_cast(d_uSamples_.data());
@@ -52,7 +41,7 @@ KGMT::KGMT(float width, float height, int N, int numIterations, int maxTreeSize,
     d_activeU_ptr_ = thrust::raw_pointer_cast(d_activeU_.data());
     
 
-    cudaMalloc(&d_costGoal, sizeof(float));
+    cudaMalloc(&d_costToGoal, sizeof(float));
     thrust::fill(d_eParentIdx_.begin(), d_eParentIdx_.end(), -1);
 }
 
@@ -88,9 +77,9 @@ void KGMT::plan(float* initial, float* goal) {
         thrust::exclusive_scan(d_G_.begin(), d_G_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
         activeSize = d_scanIdx_[maxTreeSize_-1];
         (d_G_[maxTreeSize_ - 1]) ? ++activeSize : 0;
-        findInd<<<gridSize, blockSize>>>(maxTreeSize_, d_G_ptr_, d_scanIdx_ptr_, d_activeIdx_G_ptr_);
+        findInd<<<gridSize, blockSize>>>(maxTreeSize_, d_G_ptr_, d_scanIdx_ptr_, d_activeIdx_ptr_);
         gridSizeActive = std::min(activeSize, 32);
-        propagateG<<<gridSizeActive, blockSizeActive>>>(d_xGoal_ptr_, d_uSamples_ptr_, d_samples_ptr_, d_activeU_ptr_, d_eClosed_ptr_, d_G_ptr_, d_uConn_ptr_, d_uParentIdx_ptr_, d_activeIdx_G_ptr_, activeSize, treeSize_, sampleDim_, agentLength_, numDisc_, d_states, connThresh_);
+        propagateG<<<gridSizeActive, blockSizeActive>>>(d_xGoal_ptr_, d_uSamples_ptr_, d_samples_ptr_, d_activeU_ptr_, d_G_ptr_, d_uConn_ptr_, d_uParentIdx_ptr_, d_activeIdx_ptr_, activeSize, treeSize_, sampleDim_, agentLength_, numDisc_, d_states, connThresh_);
 
         // Find New G:
         thrust::exclusive_scan(d_activeU_.begin(), d_activeU_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
@@ -102,7 +91,7 @@ void KGMT::plan(float* initial, float* goal) {
         treeSize_ += gridSizeActive * blockSizeActive;
 
         // treeSize_ += 1;
-        cudaMemcpy(&costGoal_, d_costGoal, sizeof(float), cudaMemcpyDeviceToHost);
+        cudaMemcpy(&costToGoal_, d_costToGoal, sizeof(float), cudaMemcpyDeviceToHost);
     }
 
     double t_kgmt = (std::clock() - t_kgmtStart) / (double) CLOCKS_PER_SEC;
@@ -111,11 +100,7 @@ void KGMT::plan(float* initial, float* goal) {
     // move vectors to csv to be plotted.
     copyAndWriteVectorToCSV(d_samples_, "samples.csv", maxTreeSize_, sampleDim_);
     copyAndWriteVectorToCSV(d_eParentIdx_, "parentRelations.csv", maxTreeSize_, 1);
-    copyAndWriteVectorToCSV(d_eUnexplored_, "unexplored.csv", maxTreeSize_, 1);
-    copyAndWriteVectorToCSV(d_eOpen_, "open.csv", maxTreeSize_, 1);
-    copyAndWriteVectorToCSV(d_eClosed_, "closed.csv", maxTreeSize_, 1);
     copyAndWriteVectorToCSV(d_G_, "G.csv", maxTreeSize_, 1);
-    copyAndWriteVectorToCSV(d_eConnectivity_, "connectivity.csv", maxTreeSize_, 1);
 
     // Free the allocated memory for curand states
     cudaFree(d_states);
@@ -134,7 +119,7 @@ void findInd(int numSamples, bool* S, int* scanIdx, int* activeS){
 
 // Extends blockDim.x samples per sample in G.
 __global__
-void propagateG(float* xGoal, float* uSamples, float* samples, bool* activeU, bool* eClosed, bool* G, float* uConn, int* uParentIdx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states, float connThresh) {
+void propagateG(float* xGoal, float* uSamples, float* samples, bool* activeU, bool* G, float* uConn, int* uParentIdx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states, float connThresh) {
     
     if (blockIdx.x >= activeSize_G)
         return;
@@ -163,7 +148,6 @@ void propagateG(float* xGoal, float* uSamples, float* samples, bool* activeU, bo
             activeU[tid] = true;
         }
         if (threadIdx.x == 0) {
-            eClosed[x0Idx] = true;  // TODO: Possibly remove eClosed and just use G.
             G[x0Idx] = false;
         }
     }
