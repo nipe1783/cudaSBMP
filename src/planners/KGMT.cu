@@ -7,6 +7,12 @@
 #include "state/State.h"
 #include "helper/helper.cuh"
 #include "helper/helper.cu"
+#include <thrust/iterator/counting_iterator.h>
+#include <thrust/iterator/constant_iterator.h>
+#include <thrust/sort.h>
+#include <thrust/reduce.h>
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
 #include <curand_kernel.h>
 #include <chrono>
 #include <ctime>
@@ -15,8 +21,11 @@
 #define STATE_DIM 4
 #define BLOCK_SIZE 32
 
-KGMT::KGMT(float width, float height, int N, int numIterations, int maxTreeSize, int maxSampleSize, int numDisc, int sampleDim, float agentLength):
-    width_(width), height_(height), N_(N), numIterations_(numIterations), maxTreeSize_(maxTreeSize), maxSampleSize_(maxSampleSize), numDisc_(numDisc), sampleDim_(sampleDim), agentLength_(agentLength){
+KGMT::KGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int maxSampleSize, int numDisc, int sampleDim, float agentLength):
+    width_(width), height_(height), N_(N), n_(n), numIterations_(numIterations), maxTreeSize_(maxTreeSize), maxSampleSize_(maxSampleSize), numDisc_(numDisc), sampleDim_(sampleDim), agentLength_(agentLength){
+
+    cellSize_ = width / N;
+    subCellSize_ = width / (n*N);
 
     d_G_ = thrust::device_vector<bool>(maxTreeSize);
     d_activeU_ = thrust::device_vector<bool>(maxTreeSize);
@@ -28,6 +37,19 @@ KGMT::KGMT(float width, float height, int N, int numIterations, int maxTreeSize,
     d_uSamples_ = thrust::device_vector<float>(maxSampleSize * sampleDim);
     d_uParentIdx_ = thrust::device_vector<int>(maxSampleSize);
     d_uConn_ = thrust::device_vector<float>(maxSampleSize);
+    d_R1Avail_ = thrust::device_vector<bool>(N*N);
+    d_R2Avail_ = thrust::device_vector<bool>(N*N*n*n);
+    d_rSel_ = thrust::device_vector<int>(N*N);
+    d_sValid_ = thrust::device_vector<int>(N*N);
+    d_sInvalid_ = thrust::device_vector<int>(N*N);
+    d_scoreR_ = thrust::device_vector<float>(N*N);
+    d_uR1Count_ = thrust::device_vector<int>(N*N);
+    d_uR1Idx_ = thrust::device_vector<int>(N*N);
+    d_R1_ = thrust::device_vector<int>(maxSampleSize);
+    d_R2_ = thrust::device_vector<int>(maxSampleSize);
+    d_uR1_ = thrust::device_vector<int>(maxSampleSize);
+    d_uR2_ = thrust::device_vector<int>(maxSampleSize);
+    d_uValid_ = thrust::device_vector<bool>(maxSampleSize);
 
     d_G_ptr_ = thrust::raw_pointer_cast(d_G_.data());
     d_samples_ptr_ = thrust::raw_pointer_cast(d_samples_.data());
@@ -39,7 +61,20 @@ KGMT::KGMT(float width, float height, int N, int numIterations, int maxTreeSize,
     d_uParentIdx_ptr_ = thrust::raw_pointer_cast(d_uParentIdx_.data());
     d_uConn_ptr_ = thrust::raw_pointer_cast(d_uConn_.data());
     d_activeU_ptr_ = thrust::raw_pointer_cast(d_activeU_.data());
-    
+    d_rSel_ptr_ = thrust::raw_pointer_cast(d_rSel_.data());
+    d_sValid_ptr_ = thrust::raw_pointer_cast(d_sValid_.data());
+    d_sInvalid_ptr_ = thrust::raw_pointer_cast(d_sInvalid_.data());
+    d_scoreR_ptr_ = thrust::raw_pointer_cast(d_scoreR_.data());
+    d_R1Avail_ptr_ = thrust::raw_pointer_cast(d_R1Avail_.data());
+    d_R2Avail_ptr_ = thrust::raw_pointer_cast(d_R2Avail_.data());
+    d_R1_ptr_ = thrust::raw_pointer_cast(d_R1_.data());
+    d_R2_ptr_ = thrust::raw_pointer_cast(d_R2_.data());
+    d_uR1_ptr_ = thrust::raw_pointer_cast(d_uR1_.data());
+    d_uR2_ptr_ = thrust::raw_pointer_cast(d_uR2_.data());
+    d_uValid_ptr_ = thrust::raw_pointer_cast(d_uValid_.data());
+    d_uR1Count_ptr_ = thrust::raw_pointer_cast(d_uR1Count_.data());
+    d_uR1Idx_ptr_ = thrust::raw_pointer_cast(d_uR1Idx_.data());
+
 
     cudaMalloc(&d_costToGoal, sizeof(float));
     thrust::fill(d_eParentIdx_.begin(), d_eParentIdx_.end(), -1);
@@ -77,20 +112,63 @@ void KGMT::plan(float* initial, float* goal) {
         thrust::exclusive_scan(d_G_.begin(), d_G_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
         activeSize = d_scanIdx_[maxTreeSize_-1];
         (d_G_[maxTreeSize_ - 1]) ? ++activeSize : 0;
-        findInd<<<gridSize, blockSize>>>(maxTreeSize_, d_G_ptr_, d_scanIdx_ptr_, d_activeIdx_ptr_);
+        findInd<<<gridSize, blockSize>>>(
+            maxTreeSize_, 
+            d_G_ptr_, 
+            d_scanIdx_ptr_, 
+            d_activeIdx_ptr_);
         gridSizeActive = std::min(activeSize, 32);
-        propagateG<<<gridSizeActive, blockSizeActive>>>(d_xGoal_ptr_, d_uSamples_ptr_, d_samples_ptr_, d_activeU_ptr_, d_G_ptr_, d_uConn_ptr_, d_uParentIdx_ptr_, d_activeIdx_ptr_, activeSize, treeSize_, sampleDim_, agentLength_, numDisc_, d_states, connThresh_);
+        propagateG<<<gridSizeActive, blockSizeActive>>>(
+            d_xGoal_ptr_, 
+            d_uSamples_ptr_, 
+            d_samples_ptr_, 
+            d_activeU_ptr_, 
+            d_G_ptr_,
+            d_uParentIdx_ptr_, 
+            d_activeIdx_ptr_, 
+            activeSize, treeSize_, 
+            sampleDim_, 
+            agentLength_, 
+            numDisc_, 
+            d_states, 
+            connThresh_,
+            d_uR1_ptr_,
+            d_uR2_ptr_,
+            d_R2_ptr_,
+            d_uValid_ptr_,
+            cellSize_,
+            subCellSize_,
+            N_,
+            n_);
+
+        // update grid:
+        
 
         // Find New G:
         thrust::exclusive_scan(d_activeU_.begin(), d_activeU_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
         activeSize = d_scanIdx_[maxTreeSize_-1];
         (d_activeU_[maxTreeSize_ - 1]) ? ++activeSize : 0;
-        findInd<<<gridSize, blockSize>>>(maxTreeSize_, d_activeU_ptr_, d_scanIdx_ptr_, d_activeIdx_ptr_);
+        findInd<<<gridSize, blockSize>>>(
+            maxTreeSize_, 
+            d_activeU_ptr_, 
+            d_scanIdx_ptr_, 
+            d_activeIdx_ptr_);
         gridSizeActive = std::min((activeSize + blockSizeActive - 1) / blockSizeActive, 2147483647);
-        expandG<<<gridSizeActive, blockSizeActive>>>(d_samples_ptr_, d_uSamples_ptr_, d_activeIdx_ptr_, d_uParentIdx_ptr_, d_eParentIdx_ptr_, d_G_ptr_, d_activeU_ptr_, activeSize, treeSize_);
-        treeSize_ += gridSizeActive * blockSizeActive;
+        expandG<<<gridSizeActive, blockSizeActive>>>(
+            d_samples_ptr_, 
+            d_uSamples_ptr_, 
+            d_activeIdx_ptr_, 
+            d_uParentIdx_ptr_, 
+            d_eParentIdx_ptr_, 
+            d_G_ptr_, 
+            d_activeU_ptr_, 
+            activeSize, 
+            treeSize_);
+
+        
 
         // treeSize_ += 1;
+        treeSize_ += gridSizeActive * blockSizeActive;
         cudaMemcpy(&costToGoal_, d_costToGoal, sizeof(float), cudaMemcpyDeviceToHost);
     }
 
@@ -118,8 +196,29 @@ void findInd(int numSamples, bool* S, int* scanIdx, int* activeS){
 }
 
 // Extends blockDim.x samples per sample in G.
-__global__
-void propagateG(float* xGoal, float* uSamples, float* samples, bool* activeU, bool* G, float* uConn, int* uParentIdx, int* activeIdx_G, int activeSize_G, int treeSize, int sampleDim, float agentLength, int numDisc, curandState* states, float connThresh) {
+__global__ void propagateG(
+    float* xGoal, 
+    float* uSamples, 
+    float* samples, 
+    bool* activeU, 
+    bool* G,
+    int* uParentIdx, 
+    int* activeIdx_G, 
+    int activeSize_G, 
+    int treeSize, 
+    int sampleDim, 
+    float agentLength, 
+    int numDisc, 
+    curandState* states, 
+    float connThresh,
+    int* uR1,
+    int* uR2,
+    int* R2,
+    bool* uValid,
+    float cellSize,
+    float subCellSize,
+    int N,
+    int n) {
     
     if (blockIdx.x >= activeSize_G)
         return;
@@ -140,11 +239,11 @@ void propagateG(float* xGoal, float* uSamples, float* samples, bool* activeU, bo
         __syncthreads();
         float* x1 = &uSamples[tid * sampleDim];
         curandState state = states[tid];
-        propagateState(x0, x1, numDisc, agentLength, &state);
-        uConn[tid] = calculateConnectivity(x1, s_xGoal);
-        states[tid] = state;
-        if(uConn[tid] > connThresh){
+        if(propagateAndCheck(x0, x1, numDisc, agentLength, &state)){
+            states[tid] = state;
             uParentIdx[tid] = x0Idx;
+            uR1[tid] = getR(x1[0], x1[1], cellSize, N);
+            uR2[tid] = getR(x1[0], x1[1], subCellSize, n*N);
             activeU[tid] = true;
         }
         if (threadIdx.x == 0) {
@@ -174,24 +273,6 @@ void expandG(float* samples, float* uSamples, int* activeIdx, int* uParentIdx, i
     }
 }
 
-
-__global__
-void expandEOpen(bool* eUnexplored, bool* eClosed, bool* eOpen, float* eConn, int* activeEUnexplored_Idx, int size_activeEUnexplored, float connThresh){
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid >= size_activeEUnexplored)
-        return;
-    int xIDx = activeEUnexplored_Idx[tid];
-    if(eUnexplored[xIDx]){
-        if(eConn[xIDx] > connThresh){
-            eOpen[xIDx] = true;
-            eUnexplored[xIDx] = false;
-            return;
-        }
-        eUnexplored[xIDx] = false;
-        eClosed[xIDx] = true;
-    }
-}
-
 __global__ void initCurandStates(curandState* states, int numStates, int seed) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= numStates)
@@ -200,7 +281,7 @@ __global__ void initCurandStates(curandState* states, int numStates, int seed) {
 }
 
 __device__
-void propagateState(float* x0, float* x1, int numDisc, float agentLength, curandState* state){
+bool propagateAndCheck(float* x0, float* x1, int numDisc, float agentLength, curandState* state){
     // Generate random controls
     float a = curand_uniform(state) * 1.0f - .5f;
     float steering = curand_uniform(state) * M_PI - M_PI / 2; 
@@ -232,6 +313,7 @@ void propagateState(float* x0, float* x1, int numDisc, float agentLength, curand
     x1[4] = a;
     x1[5] = steering;
     x1[6] = duration;
+    return true;
 }
 
 // TODO: UPDATE THIS
@@ -248,4 +330,13 @@ __device__ float calculateConnectivity(float* x, float* xGoal){
 // TODO: UPDATE THIS
 __device__ bool inCollision(float* x0, float* x1){
     return false;
+}
+
+__device__ int getR(float x, float y, float cellSize, int N) {
+    int cellX = static_cast<int>(x / cellSize);
+    int cellY = static_cast<int>(y / cellSize);
+    if (cellX >= 0 && cellX < N && cellY >= 0 && cellY < N) {
+        return cellY * N + cellX;
+    }
+    return -1;
 }
