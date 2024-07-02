@@ -16,8 +16,8 @@ int main(void) {
     int sampleDim = 7;
     float width = 10.0;
     float height = 10.0;
-    int N = 100;
-    int n = 10;
+    int N = 16;
+    int n = 16;
     int numIterations = 100;
     int maxTreeSize = 50000;
     int maxSampleSize = 20000;
