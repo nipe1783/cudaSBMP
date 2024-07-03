@@ -11,7 +11,7 @@ class KGMT
     public:
         // constructor
         KGMT() = default;
-        KGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int maxSampleSize, int numDisc, int sampleDim, float agentLength);
+        KGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, int sampleDim, float agentLength);
 
         // methods
         void plan(float* initial, float* goal);
@@ -19,7 +19,6 @@ class KGMT
         // fields
         int numIterations_; // Number of iterations to run KGMT
         int maxTreeSize_; // Maximum number of samples to store. Similar to number of samples in PRM exceept it is initialized to 0s.
-        int maxSampleSize_; // Maximum number of samples to store. Similar to number of samples in PRM exceept it is initialized to 0s.
         int numDisc_; // Number of iterations when doing state propagation
         int sampleDim_; // Dimension of each sample
         int treeSize_; // Current size of the tree. Informs where in the d_samples_ vector to add new samples.
@@ -33,7 +32,7 @@ class KGMT
         thrust::device_vector<bool> d_U_;
         thrust::device_vector<bool> d_uValid_;
         thrust::device_vector<int> d_scanIdx_; // stores scan of G. ex: G = [0, 1, 0, 1, 1, 0, 1] -> scanIdx = [0,0,1,1,2,3,3]. Used to find active samples in G.
-        thrust::device_vector<int> d_UscanIdx_;
+        thrust::device_vector<int> d_scanIdxGnew_;
         thrust::device_vector<int> d_R1scanIdx_;
         thrust::device_vector<int> d_activeIdx_;
         thrust::device_vector<int> d_activeR1Idx_;
@@ -59,7 +58,7 @@ class KGMT
         bool *d_uValid_ptr_;
         int *d_scanIdx_ptr_;
         int *d_R1scanIdx_ptr_;
-        int *d_UscanIdx_ptr_;
+        int *d_scanIdxGnew_ptr_;
         int *d_activeIdx_ptr_;
         int *d_activeR1Idx_ptr_;
         int *d_activeUIdx_ptr_;
@@ -121,7 +120,8 @@ __global__ void propagateG(
     int numDisc,
     float agentLength,
     float R1Threshold,
-    float* R1Scores);
+    float* R1Scores,
+    int itr);
 
 __global__ void updateR1(
     float* R1Score, 
