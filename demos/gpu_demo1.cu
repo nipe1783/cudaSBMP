@@ -18,19 +18,19 @@ int main(void) {
     float height = 10.0;
     int N = 16;
     int n = 16;
-    int numIterations = 100;
+    int numIterations = 1;
     int maxTreeSize = 50000;
     int maxSampleSize = 20000;
-    int numDisc = 10;
+    int numDisc = 100;
     float agentLength = 1.0;
 
     KGMT kgmt(width, height, N, n, numIterations, maxTreeSize, maxSampleSize, numDisc, sampleDim, agentLength);
     float* initial = new float[sampleDim];
     float* goal = new float[sampleDim];
-    initial[0] = 1;
-    initial[1] = 1;
-    initial[2] = 1;
-    initial[3] = 1;
+    initial[0] = 5;
+    initial[1] = 5;
+    initial[2] = 0;
+    initial[3] = 0;
     initial[4] = 0;
     initial[5] = 0;
     initial[6] = 0;

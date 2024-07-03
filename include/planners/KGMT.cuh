@@ -27,8 +27,9 @@ class KGMT
         float height_; // Height of the workspace
         float costToGoal_; // Cost of the goal state
         float agentLength_; // Length of the agent. Used in state propagation.
-        float connThresh_;
+        float R1Threshold_;
         thrust::device_vector<bool> d_G_; // Set of samples to be expanded in current iteration.
+        thrust::device_vector<bool> d_GNew_;
         thrust::device_vector<bool> d_U_;
         thrust::device_vector<bool> d_uValid_;
         thrust::device_vector<int> d_scanIdx_; // stores scan of G. ex: G = [0, 1, 0, 1, 1, 0, 1] -> scanIdx = [0,0,1,1,2,3,3]. Used to find active samples in G.
@@ -47,13 +48,13 @@ class KGMT
         thrust::device_vector<int> d_R1Invalid_;
         thrust::device_vector<int> d_R2Invalid_;
         thrust::device_vector<int> d_R2_;
-        thrust::device_vector<int> d_R1_;
+        thrust::device_vector<int> d_R1_; // number of times a sample has been located in region R1i.
         thrust::device_vector<int> d_R1Avail_;
         thrust::device_vector<int> d_R2Avail_;
-        thrust::device_vector<int> d_R1Sel_; // number of times region r has been selected.
         thrust::device_vector<float> d_R1Score_; // expansion score of region R.
 
         bool *d_G_ptr_;
+        bool *d_GNew_ptr_;
         bool *d_U_ptr_;
         bool *d_uValid_ptr_;
         int *d_scanIdx_ptr_;
@@ -79,7 +80,6 @@ class KGMT
         int* d_uR2_ptr_;
         int* d_uR1Count_ptr_;
         int* d_uR1Idx_ptr_;
-        int* d_R1Sel_ptr_;
         float* d_R1Score_ptr_;
         
         float *d_costToGoal;
@@ -101,8 +101,7 @@ __global__ void propagateG(
     int sizeG, 
     int* activeGIdx, 
     bool* G,
-    bool* U,
-    bool* uValid,
+    bool* GNew,
     float* treeSamples,
     float* unexploredSamples,
     int* uParentIdx,
@@ -120,7 +119,9 @@ __global__ void propagateG(
     float R2Size,
     curandState* randomStates,
     int numDisc,
-    float agentLength);
+    float agentLength,
+    float R1Threshold,
+    float* R1Scores);
 
 __global__ void updateR1(
     float* R1Score, 
@@ -133,10 +134,21 @@ __global__ void updateR1(
     float epsilon, 
     float R1Vol);
 
+__global__ void updateG(
+    float* treeSamples, 
+    float* unexploredSamples, 
+    int* unexploredParentIdx,
+    int* treeParentIdx,
+    bool* G,
+    bool* GNew,
+    int* GNewIdx, 
+    int GNewSize, 
+    int treeSize);
+
 __global__ void initCurandStates(curandState* states, int numStates, int seed);
 
 
-__device__ int getR1(float x, float y, float R1Size, int N);
-__device__ int getR2(float x, float y, int r1, float R1Size, int N, float R2Size, int n);
+__host__ __device__ int getR1(float x, float y, float R1Size, int N);
+__host__ __device__ int getR2(float x, float y, int r1, float R1Size, int N, float R2Size, int n);
 __device__ bool propagateAndCheck(float* x0, float* x1, int numDisc, float agentLength, curandState* state);
 
