@@ -19,6 +19,7 @@
 #include <cub/cub.cuh>
 #include <filesystem>
 
+
 #define SAMPLE_DIM 7
 #define STATE_DIM 4
 #define BLOCK_SIZE 32
@@ -153,7 +154,6 @@ void KGMT::plan(float* initial, float* goal) {
         // PROPAGATE G:
         thrust::exclusive_scan(d_G_.begin(), d_G_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
         activeSize = d_scanIdx_[maxTreeSize_-1];
-        printf("Iteration %d, G Size is %d\n", itr, activeSize);
         (d_G_[maxTreeSize_ - 1]) ? ++activeSize : 0;
         
         findInd<<<gridSize, blockSize>>>(
@@ -161,8 +161,10 @@ void KGMT::plan(float* initial, float* goal) {
             d_G_ptr_, 
             d_scanIdx_ptr_, 
             d_activeIdx_ptr_);
-        gridSizeActive = activeSize;
+
+        
         blockSizeActive = 32;
+        gridSizeActive = std::min(activeSize, int(floor(maxTreeSize_ / blockSizeActive)));
         propagateG<<<gridSizeActive, blockSizeActive>>>(
             activeSize, 
             d_activeIdx_ptr_, 
@@ -191,21 +193,15 @@ void KGMT::plan(float* initial, float* goal) {
             itr);
         
         // UPDATE G:
-        std::ostringstream filename;
-        std::filesystem::create_directories("Data/GNew");
-        filename.str("");
-        filename << "Data/GNew/GNew" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_GNew_, filename.str(), maxTreeSize_, 1);
         thrust::exclusive_scan(d_GNew_.begin(), d_GNew_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
         activeSize = d_scanIdx_[maxTreeSize_-1];
         (d_GNew_[maxTreeSize_ - 1]) ? ++activeSize : 0;
-        printf("Iteration %d, GNew Size is %d\n", itr, activeSize);
         findInd<<<gridSize, blockSize>>>(
             maxTreeSize_, 
             d_GNew_ptr_, 
             d_scanIdx_ptr_, 
             d_activeIdx_ptr_);
-        gridSizeActive = std::min(activeSize, 32);
+        gridSizeActive = std::min(activeSize, int(floor(maxTreeSize_ / blockSizeActive)));
         blockSizeActive = 128;
         updateG<<<gridSizeActive, blockSizeActive>>>(
             d_treeSamples_ptr_, 
@@ -217,12 +213,18 @@ void KGMT::plan(float* initial, float* goal) {
             d_activeIdx_ptr_, 
             activeSize, 
             treeSize_);
-        treeSize_ += activeSize;
         
-        cudaMemcpy(&costToGoal_, d_costToGoal, sizeof(float), cudaMemcpyDeviceToHost);
+        treeSize_ += activeSize;
 
-        printf("treeSize is %d\n", treeSize_);
-        // std::ostringstream filename;
+        // printf("treeSize is %d\n", treeSize_);
+        cudaMemcpy(&costToGoal_, d_costToGoal, sizeof(float), cudaMemcpyDeviceToHost);
+        if(treeSize_ >= maxTreeSize_){
+            // printf("Tree size exceeded maxTreeSize\n");
+            break;
+        }
+
+        
+        std::ostringstream filename;
         std::filesystem::create_directories("Data");
         std::filesystem::create_directories("Data/Samples");
         std::filesystem::create_directories("Data/Parents");
@@ -343,9 +345,6 @@ __global__ void propagateG(
     atomicAdd(&R2[r2], 1);
     if(valid){
         if(R1Scores[r1] > R1Threshold){
-            if(itr == 4){
-                printf("R1 Score is %f, TID is %d\n", R1Scores[r1], tid);
-            }
             GNew[tid] = true;
         }
         if(R1Avail[r1] == 0){
@@ -362,6 +361,7 @@ __global__ void propagateG(
         atomicAdd(&R2Invalid[r2], 1);
     }
     randomStates[tid] = randState;
+
 }
 
 // 1 Block Version. Each thread calculates 1 R1 cell.

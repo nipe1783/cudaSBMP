@@ -18,7 +18,7 @@ int main(void) {
     float height = 10.0;
     int N = 16;
     int n = 16;
-    int numIterations = 4;
+    int numIterations = 100;
     int maxTreeSize = 50000;
     int maxSampleSize = 100000;
     int numDisc = 10;
