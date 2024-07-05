@@ -88,6 +88,10 @@ KGMT::KGMT(float width, float height, int N, int n, int numIterations, int maxTr
     thrust::fill(d_uParentIdx_.begin(), d_uParentIdx_.end(), -1);
     thrust::fill(d_R1Score_.begin(), d_R1Score_.end(), 1.0);
 
+    R1Threshold_ = 0.0;
+    cudaMalloc(&d_R1Threshold_ptr_, sizeof(float));
+    cudaMemcpy(d_R1Threshold_ptr_, &R1Threshold_, sizeof(float), cudaMemcpyHostToDevice);
+
 }
 
 void KGMT::plan(float* initial, float* goal) {
@@ -108,7 +112,6 @@ void KGMT::plan(float* initial, float* goal) {
     thrust::fill(d_R1Avail_ptr + r1_0, d_R1Avail_ptr + r1_0 + 1, 1);
     thrust::fill(d_R2Avail_ptr + r2_0, d_R2Avail_ptr + r2_0 + 1, 1);
     thrust::fill(d_R1Valid_ptr + r1_0, d_R1Valid_ptr + r1_0 + 1, 1);
-    R1Threshold_ = 0.01;
 
     // initialize xGoal
     cudaMemcpy(d_xGoal_ptr_, goal, sampleDim_ * sizeof(float), cudaMemcpyHostToDevice);
@@ -134,12 +137,12 @@ void KGMT::plan(float* initial, float* goal) {
         // UPDATE GRID SCORES:
         thrust::exclusive_scan(d_R1Avail_.begin(), d_R1Avail_.end(), d_R1scanIdx_.begin(), 0, thrust::plus<int>());
         activeSize = d_R1scanIdx_[N_*N_-1];
-        (d_R1Avail_[N_*N_ - 1]) == 1 ? ++activeSize : 0;
-        findInd<<<gridSize, blockSize>>>(
-            N_*N_, 
-            d_R1Avail_ptr_, 
-            d_R1scanIdx_ptr_, 
-            d_activeR1Idx_ptr_);
+        // (d_R1Avail_[N_*N_ - 1]) == 1 ? ++activeSize : 0;
+        // findInd<<<gridSize, blockSize>>>(
+        //     N_*N_, 
+        //     d_R1Avail_ptr_, 
+        //     d_R1scanIdx_ptr_, 
+        //     d_activeR1Idx_ptr_);
         updateR1<<<1, N_*N_>>>(
             d_R1Score_ptr_, 
             d_R1Avail_ptr_, 
@@ -149,7 +152,9 @@ void KGMT::plan(float* initial, float* goal) {
             d_R1_ptr_,
             n_, 
             0.01, 
-            R2Size_*R2Size_);
+            R2Size_*R2Size_,
+            d_R1Threshold_ptr_,
+            activeSize);
 
         // PROPAGATE G:
         thrust::exclusive_scan(d_G_.begin(), d_G_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
@@ -188,7 +193,7 @@ void KGMT::plan(float* initial, float* goal) {
             d_randomStates, 
             numDisc_, 
             agentLength_,
-            R1Threshold_,
+            d_R1Threshold_ptr_,
             d_R1Score_ptr_,
             itr);
         
@@ -216,36 +221,37 @@ void KGMT::plan(float* initial, float* goal) {
         
         treeSize_ += activeSize;
 
-        // printf("treeSize is %d\n", treeSize_);
+        printf("Iteration %d, Tree size %d\n", itr, treeSize_);
         cudaMemcpy(&costToGoal_, d_costToGoal, sizeof(float), cudaMemcpyDeviceToHost);
         if(treeSize_ >= maxTreeSize_){
-            // printf("Tree size exceeded maxTreeSize\n");
+            printf("Tree size exceeded maxTreeSize\n");
             break;
         }
 
         
-        std::ostringstream filename;
-        std::filesystem::create_directories("Data");
-        std::filesystem::create_directories("Data/Samples");
-        std::filesystem::create_directories("Data/Parents");
-        std::filesystem::create_directories("Data/R1Scores");
-        std::filesystem::create_directories("Data/R1Avail");
-        std::filesystem::create_directories("Data/R1");
-        filename.str("");
-        filename << "Data/Samples/samples" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, sampleDim_);
-        filename.str("");
-        filename << "Data/Parents/parents" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_treeParentIdx_, filename.str(), maxTreeSize_, 1);
-        filename.str("");
-        filename << "Data/R1Scores/R1Scores" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_R1Score_, filename.str(), N_*N_, 1);
-        filename.str("");
-        filename << "Data/R1Avail/R1Avail" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_R1Avail_, filename.str(), N_*N_, 1);
-        filename.str("");
-        filename << "Data/R1/R1" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_R1_, filename.str(), N_*N_, 1);
+        // std::ostringstream filename;
+        // std::filesystem::create_directories("Data");
+        // std::filesystem::create_directories("Data/Samples");
+        // std::filesystem::create_directories("Data/Parents");
+        // std::filesystem::create_directories("Data/R1Scores");
+        // std::filesystem::create_directories("Data/R1Avail");
+        // std::filesystem::create_directories("Data/R1");
+        // filename.str("");
+        // filename << "Data/Samples/samples" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, sampleDim_);
+        // filename.str("");
+        // filename << "Data/Parents/parents" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_treeParentIdx_, filename.str(), maxTreeSize_, 1);
+        // filename.str("");
+        // filename << "Data/R1Scores/R1Scores" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_R1Score_, filename.str(), N_*N_, 1);
+        // filename.str("");
+        // filename << "Data/R1Avail/R1Avail" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_R1Avail_, filename.str(), N_*N_, 1);
+        // filename.str("");
+        // filename << "Data/R1/R1" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_R1_, filename.str(), N_*N_, 1);
+
     }
 
     double t_kgmt = (std::clock() - t_kgmtStart) / (double) CLOCKS_PER_SEC;
@@ -268,6 +274,8 @@ void KGMT::plan(float* initial, float* goal) {
 
     // Free the allocated memory for curand states
     cudaFree(d_randomStates);
+    cudaFree(d_costToGoal);
+    cudaFree(d_R1Threshold_ptr_);
 }
 
 __global__
@@ -315,7 +323,7 @@ __global__ void propagateG(
     curandState* randomStates,
     int numDisc,
     float agentLength,
-    float R1Threshold,
+    float* R1Threshold,
     float* R1Scores,
     int itr) {
 
@@ -344,7 +352,7 @@ __global__ void propagateG(
     atomicAdd(&R1[r1], 1);
     atomicAdd(&R2[r2], 1);
     if(valid){
-        if(R1Scores[r1] > R1Threshold){
+        if(R1Scores[r1] >= R1Threshold[0]){
             GNew[tid] = true;
         }
         if(R1Avail[r1] == 0){
@@ -375,7 +383,9 @@ __global__ void updateR1(
     int* R1,
     int n, 
     float epsilon, 
-    float R1Vol) {
+    float R1Vol,
+    float* R1Threshold,
+    int activeSize) {
 
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= NUM_R1 * NUM_R1)
@@ -403,6 +413,8 @@ __global__ void updateR1(
 
     if (threadIdx.x == 0) {
         s_totalSum = blockSum;
+        R1Threshold[0] = s_totalSum / activeSize;
+        // R1Threshold[0] = 0.01;
     }
     __syncthreads();
 
@@ -411,7 +423,7 @@ __global__ void updateR1(
         R1Score[tid] = 1.0f;
     }
     else {
-        R1Score[tid] = score / s_totalSum;
+        R1Score[tid] = score;
     }
 }
 

@@ -80,8 +80,8 @@ class KGMT
         int* d_uR1Count_ptr_;
         int* d_uR1Idx_ptr_;
         float* d_R1Score_ptr_;
-        
         float *d_costToGoal;
+        float *d_R1Threshold_ptr_;
 
         // occupancy grid:
         int N_; // Number of cols/rows in the workspace grid
@@ -119,7 +119,7 @@ __global__ void propagateG(
     curandState* randomStates,
     int numDisc,
     float agentLength,
-    float R1Threshold,
+    float* R1Threshold,
     float* R1Scores,
     int itr);
 
@@ -132,7 +132,9 @@ __global__ void updateR1(
     int* R1Sel,
     int n, 
     float epsilon, 
-    float R1Vol);
+    float R1Vol,
+    float* R1Threshold,
+    int activeSize);
 
 __global__ void updateG(
     float* treeSamples, 

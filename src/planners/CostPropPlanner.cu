@@ -135,15 +135,5 @@ void CostPropPlanner::generateRandomTree(const float* root, const int numSamples
     printf("Kernel execution time: %f milliseconds\n", milliseconds);
     printf("Tree size: %d\n", rowsTree*colsTree);
 
-    // Save data to CSV
-    // FILE *fp = fopen("samples.csv", "w");
-    // for (int i = 0; i < rowsTree; i++){
-    //     for (int j = 0; j < colsTree; j++){
-    //         int ind = i * colsTree + j;
-    //         fprintf(fp, "%f,", hTree[ind]);
-    //     }
-    //     fprintf(fp, "\n");
-    // }
-    // fclose(fp);
     delete[] hTree;
 }
