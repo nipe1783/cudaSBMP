@@ -8,8 +8,8 @@
 #define NUM_R2 16
 #define NUM_R1 16
 
-KGMT::KGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, int sampleDim, float agentLength):
-    width_(width), height_(height), N_(N), n_(n), numIterations_(numIterations), maxTreeSize_(maxTreeSize), numDisc_(numDisc), sampleDim_(sampleDim), agentLength_(agentLength){
+KGMT::KGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, float agentLength):
+    width_(width), height_(height), N_(N), n_(n), numIterations_(numIterations), maxTreeSize_(maxTreeSize), numDisc_(numDisc), agentLength_(agentLength){
 
     R1Size_ = width / N;
     R2Size_ = width / (n*N);
@@ -24,9 +24,9 @@ KGMT::KGMT(float width, float height, int N, int n, int numIterations, int maxTr
     d_activeUIdx_ = thrust::device_vector<int>(maxTreeSize);
     d_activeR1Idx_ = thrust::device_vector<int>(N*N);
     d_treeParentIdx_ = thrust::device_vector<int>(maxTreeSize);
-    d_treeSamples_ = thrust::device_vector<float>(maxTreeSize * sampleDim);
-    d_xGoal_ = thrust::device_vector<float>(sampleDim);
-    d_unexploredSamples_ = thrust::device_vector<float>(maxTreeSize * sampleDim);
+    d_treeSamples_ = thrust::device_vector<float>(maxTreeSize * SAMPLE_DIM);
+    d_xGoal_ = thrust::device_vector<float>(SAMPLE_DIM);
+    d_unexploredSamples_ = thrust::device_vector<float>(maxTreeSize * SAMPLE_DIM);
     d_uParentIdx_ = thrust::device_vector<int>(maxTreeSize);
     d_R1Avail_ = thrust::device_vector<int>(N*N);
     d_R2Avail_ = thrust::device_vector<int>(N*N*n*n);
@@ -76,12 +76,12 @@ KGMT::KGMT(float width, float height, int N, int n, int numIterations, int maxTr
 
 }
 
-void KGMT::plan(float* initial, float* goal) {
+void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCount) {
     
     double t_kgmtStart = std::clock();
     
     // initialize vectors with root of tree
-    cudaMemcpy(d_treeSamples_ptr_, initial, sampleDim_ * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_treeSamples_ptr_, initial, SAMPLE_DIM * sizeof(float), cudaMemcpyHostToDevice);
     bool value = true;
     cudaMemcpy(d_G_ptr_, &value, sizeof(bool), cudaMemcpyHostToDevice);
     int r1_0 = getR1(initial[0], initial[1], R1Size_, N_);
@@ -96,7 +96,7 @@ void KGMT::plan(float* initial, float* goal) {
     thrust::fill(d_R1Valid_ptr + r1_0, d_R1Valid_ptr + r1_0 + 1, 1);
 
     // initialize xGoal
-    cudaMemcpy(d_xGoal_ptr_, goal, sampleDim_ * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_xGoal_ptr_, goal, SAMPLE_DIM * sizeof(float), cudaMemcpyHostToDevice);
     
     const int blockSize = 128;
 	const int gridSize = std::min((maxTreeSize_ + blockSize - 1) / blockSize, 2147483647);
@@ -119,12 +119,7 @@ void KGMT::plan(float* initial, float* goal) {
         // UPDATE GRID SCORES:
         thrust::exclusive_scan(d_R1Avail_.begin(), d_R1Avail_.end(), d_R1scanIdx_.begin(), 0, thrust::plus<int>());
         activeSize = d_R1scanIdx_[N_*N_-1];
-        // (d_R1Avail_[N_*N_ - 1]) == 1 ? ++activeSize : 0;
-        // findInd<<<gridSize, blockSize>>>(
-        //     N_*N_, 
-        //     d_R1Avail_ptr_, 
-        //     d_R1scanIdx_ptr_, 
-        //     d_activeR1Idx_ptr_);
+
         updateR1<<<1, N_*N_>>>(
             d_R1Score_ptr_, 
             d_R1Avail_ptr_, 
@@ -177,7 +172,8 @@ void KGMT::plan(float* initial, float* goal) {
             agentLength_,
             d_R1Threshold_ptr_,
             d_R1Score_ptr_,
-            itr);
+            d_obstacles,
+            obstaclesCount);
         
         // UPDATE G:
         thrust::exclusive_scan(d_GNew_.begin(), d_GNew_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
@@ -203,9 +199,9 @@ void KGMT::plan(float* initial, float* goal) {
         
         treeSize_ += activeSize;
 
-        printf("Iteration %d, Tree size %d\n", itr, treeSize_);
         cudaMemcpy(&costToGoal_, d_costToGoal, sizeof(float), cudaMemcpyDeviceToHost);
         if(treeSize_ >= maxTreeSize_){
+            printf("Iteration %d, Tree size %d\n", itr, treeSize_);
             printf("Tree size exceeded maxTreeSize\n");
             break;
         }
@@ -220,7 +216,7 @@ void KGMT::plan(float* initial, float* goal) {
         // std::filesystem::create_directories("Data/R1");
         // filename.str("");
         // filename << "Data/Samples/samples" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, sampleDim_);
+        // copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
         // filename.str("");
         // filename << "Data/Parents/parents" << itr << ".csv";
         // copyAndWriteVectorToCSV(d_treeParentIdx_, filename.str(), maxTreeSize_, 1);
@@ -240,8 +236,8 @@ void KGMT::plan(float* initial, float* goal) {
     std::cout << "time inside KGMT is " << t_kgmt << std::endl;
 
     // move vectors to csv to be plotted.
-    copyAndWriteVectorToCSV(d_treeSamples_, "samples.csv", maxTreeSize_, sampleDim_);
-    copyAndWriteVectorToCSV(d_unexploredSamples_, "unexploredSamples.csv", maxTreeSize_, sampleDim_);
+    copyAndWriteVectorToCSV(d_treeSamples_, "samples.csv", maxTreeSize_, SAMPLE_DIM);
+    copyAndWriteVectorToCSV(d_unexploredSamples_, "unexploredSamples.csv", maxTreeSize_, SAMPLE_DIM);
     copyAndWriteVectorToCSV(d_treeParentIdx_, "parentRelations.csv", maxTreeSize_, 1);
     copyAndWriteVectorToCSV(d_uParentIdx_, "uParentIdx.csv", maxTreeSize_, 1);
     copyAndWriteVectorToCSV(d_G_, "G.csv", maxTreeSize_, 1);
@@ -307,7 +303,8 @@ __global__ void propagateG(
     float agentLength,
     float* R1Threshold,
     float* R1Scores,
-    int itr) {
+    float* obstacles,
+    int obstaclesCount) {
 
     // block expands x0 BLOCK_SIZE times.
     if (blockIdx.x >= sizeG)
@@ -328,7 +325,7 @@ __global__ void propagateG(
     curandState randState = randomStates[tid];
     float* x1 = &unexploredSamples[tid * SAMPLE_DIM];
     uParentIdx[tid] = x0Idx;
-    bool valid = propagateAndCheck(x0, x1, numDisc, agentLength, &randState);
+    bool valid = propagateAndCheck(x0, x1, numDisc, agentLength, &randState, obstacles, obstaclesCount);
     int r1 = getR1(x1[0], x1[1], R1Size, N);
     int r2 = getR2(x1[0], x1[1], r1, R1Size, N , R2Size, n);
     atomicAdd(&R1[r1], 1);

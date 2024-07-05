@@ -11,6 +11,9 @@
 #include "planners/CostPropPlanner.cuh"
 #include "occupancyMaps/OccupancyGrid.cuh"
 #include "planners/KGMT.cuh"
+#include "helper/helper.cuh"
+
+#define WORKSPACE_DIM 2
 
 int main(void) {
     int sampleDim = 7;
@@ -24,7 +27,7 @@ int main(void) {
     int numDisc = 10;
     float agentLength = 1.0;
 
-    KGMT kgmt(width, height, N, n, numIterations, maxTreeSize, numDisc, sampleDim, agentLength);
+    KGMT kgmt(width, height, N, n, numIterations, maxTreeSize, numDisc, agentLength);
     float* initial = new float[sampleDim];
     float* goal = new float[sampleDim];
     initial[0] = 5;
@@ -41,7 +44,24 @@ int main(void) {
     goal[4] = 0;
     goal[5] = 0;
     goal[6] = 0;
-    kgmt.plan(initial, goal);
+
+    
+    int numObstacles = 2;
+    float *d_obstacles;
+    std::vector<float> obstacles = readObstaclesFromCSV("../configurations/obstacles/obstacles.csv", numObstacles, WORKSPACE_DIM);
+    printf("Obstacles: \n");
+    for (int i = 0; i < numObstacles; i++) {
+        for (int j = 0; j < 2 * WORKSPACE_DIM; j++) {
+            printf("%f ", obstacles[i * 2 * WORKSPACE_DIM + j]);
+        }
+        printf("\n");
+    }
+    printf("numObstacles: %d\n", numObstacles);
+	CUDA_ERROR_CHECK(cudaMalloc(&d_obstacles, sizeof(float)*2*numObstacles*WORKSPACE_DIM));
+	CUDA_ERROR_CHECK(cudaMemcpy(d_obstacles, obstacles.data(), sizeof(float)*2*numObstacles*WORKSPACE_DIM, cudaMemcpyHostToDevice));
+    kgmt.plan(initial, goal, d_obstacles, numObstacles);
+
+    cudaFree(d_obstacles);
     delete[] initial;
     delete[] goal;
     return 0;

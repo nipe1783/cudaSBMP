@@ -25,16 +25,15 @@ class KGMT
     public:
         // constructor
         KGMT() = default;
-        KGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, int sampleDim, float agentLength);
+        KGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, float agentLength);
 
         // methods
-        void plan(float* initial, float* goal);
+        void plan(float* initial, float* goal, float *d_obstacles, int obstaclesCount);
 
         // fields
         int numIterations_; // Number of iterations to run KGMT
         int maxTreeSize_; // Maximum number of samples to store. Similar to number of samples in PRM exceept it is initialized to 0s.
         int numDisc_; // Number of iterations when doing state propagation
-        int sampleDim_; // Dimension of each sample
         int treeSize_; // Current size of the tree. Informs where in the d_samples_ vector to add new samples.
         float width_; // Width of the workspace
         float height_; // Height of the workspace
@@ -135,7 +134,8 @@ __global__ void propagateG(
     float agentLength,
     float* R1Threshold,
     float* R1Scores,
-    int itr);
+    float* obstacles,
+    int obstacleCount);
 
 __global__ void updateR1(
     float* R1Score, 

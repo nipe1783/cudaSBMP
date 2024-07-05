@@ -18,6 +18,7 @@ include_directories(
     ${CUDA_INCLUDE_DIRS}
     ${Python3_INCLUDE_DIRS}
     ${Python3_NumPy_INCLUDE_DIRS}
+    ${YAML_CPP_INCLUDE_DIR}
 )
 
 # Add the source files for your project
@@ -35,10 +36,10 @@ set(SOURCE_FILES
 add_library(parallelSBMP_lib ${SOURCE_FILES})
 
 # Add your CUDA executable
-add_executable(gpu_demo1 demos/gpu_demo1.cu)
+add_executable(main demos/main.cu)
 
 # Link the library and other dependencies with the CUDA executable
-target_link_libraries(gpu_demo1
+target_link_libraries(main
     parallelSBMP_lib
     ${CUDA_LIBRARIES}
     ${Boost_LIBRARIES}
@@ -50,13 +51,13 @@ target_link_libraries(gpu_demo1
 
 # Ensure CUDA separable compilation
 set_target_properties(parallelSBMP_lib PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-set_target_properties(gpu_demo1 PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+set_target_properties(main PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
 # Suppress specific CUDA warnings and enable detailed information
 set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -diag-suppress=20012,20013,20014,20015 --expt-relaxed-constexpr --ptxas-options=-v")
 
 # Set CUDA architectures
-set_property(TARGET gpu_demo1 PROPERTY CUDA_ARCHITECTURES 52)
+set_property(TARGET main PROPERTY CUDA_ARCHITECTURES 52)
 set_property(TARGET parallelSBMP_lib PROPERTY CUDA_ARCHITECTURES 52)
 
 # Suppress all warnings from Eigen
