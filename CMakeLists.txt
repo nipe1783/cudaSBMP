@@ -24,12 +24,11 @@ include_directories(
 set(SOURCE_FILES
     src/agent/Agent.cpp
     src/state/State.cpp
-    src/planners/Planner.cu
-    src/planners/NaivePlanner.cu
-    src/planners/CostPropPlanner.cu
     src/planners/KGMT.cu
     src/helper/helper.cu
     src/occupancyMaps/OccupancyGrid.cu
+    src/collisionCheck/collisionCheck.cu
+    src/statePropagator/statePropagator.cu
 )
 
 # Add a library target for your non-CUDA code
@@ -50,6 +49,7 @@ target_link_libraries(gpu_demo1
 )
 
 # Ensure CUDA separable compilation
+set_target_properties(parallelSBMP_lib PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 set_target_properties(gpu_demo1 PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
 # Suppress specific CUDA warnings and enable detailed information

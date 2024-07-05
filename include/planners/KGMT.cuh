@@ -1,10 +1,24 @@
 #pragma once
-
-#include "planners/Planner.cuh"
-#include "occupancyMaps/OccupancyGrid.cuh"
-#include <thrust/device_vector.h>
+#include "helper/helper.cuh"
+#include "collisionCheck/collisionCheck.cuh"
+#include "statePropagator/statePropagator.cuh"
+#include <thrust/iterator/counting_iterator.h>
+#include <thrust/iterator/constant_iterator.h>
+#include <cuda_runtime.h>
+#include <stdio.h>
+#include <cstdio>
+#include <Eigen/Core>
+#include "agent/Agent.h"
+#include "state/State.h"
+#include <thrust/sort.h>
+#include <thrust/reduce.h>
 #include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
 #include <curand_kernel.h>
+#include <chrono>
+#include <ctime>
+#include <cub/cub.cuh>
+#include <filesystem>
 
 class KGMT
 {
@@ -152,5 +166,5 @@ __global__ void initCurandStates(curandState* states, int numStates, int seed);
 
 __host__ __device__ int getR1(float x, float y, float R1Size, int N);
 __host__ __device__ int getR2(float x, float y, int r1, float R1Size, int N, float R2Size, int n);
-__device__ bool propagateAndCheck(float* x0, float* x1, int numDisc, float agentLength, curandState* state);
+
 
