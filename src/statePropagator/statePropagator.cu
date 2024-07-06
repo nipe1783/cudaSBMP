@@ -19,11 +19,9 @@ bool propagateAndCheck(float* x0, float* x1, int numDisc, float agentLength, cur
     float bbMin[WORKSPACE_DIM], bbMax[WORKSPACE_DIM];
 
     bool motionValid = true;
-
     for (int i = 0; i < numDisc; ++i) {
         
         float v_state[WORKSPACE_DIM] = {x, y};
-
         cos_theta = cosf(theta);
         sin_theta = sinf(theta);
         tan_steering = tanf(steering);
@@ -33,7 +31,6 @@ bool propagateAndCheck(float* x0, float* x1, int numDisc, float agentLength, cur
         y += v * sin_theta * dt;
         theta += (v / agentLength) * tan_steering * dt;
         v += a * dt;
-
 
         float w_state[WORKSPACE_DIM] = {x, y};
 

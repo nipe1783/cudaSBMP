@@ -4,7 +4,6 @@
 
 #define SAMPLE_DIM 7
 #define STATE_DIM 4
-#define BLOCK_SIZE 32
 #define NUM_R2 16
 #define NUM_R1 16
 
@@ -207,28 +206,28 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
         }
 
         
-        // std::ostringstream filename;
-        // std::filesystem::create_directories("Data");
-        // std::filesystem::create_directories("Data/Samples");
-        // std::filesystem::create_directories("Data/Parents");
-        // std::filesystem::create_directories("Data/R1Scores");
-        // std::filesystem::create_directories("Data/R1Avail");
-        // std::filesystem::create_directories("Data/R1");
-        // filename.str("");
-        // filename << "Data/Samples/samples" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
-        // filename.str("");
-        // filename << "Data/Parents/parents" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_treeParentIdx_, filename.str(), maxTreeSize_, 1);
-        // filename.str("");
-        // filename << "Data/R1Scores/R1Scores" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_R1Score_, filename.str(), N_*N_, 1);
-        // filename.str("");
-        // filename << "Data/R1Avail/R1Avail" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_R1Avail_, filename.str(), N_*N_, 1);
-        // filename.str("");
-        // filename << "Data/R1/R1" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_R1_, filename.str(), N_*N_, 1);
+        std::ostringstream filename;
+        std::filesystem::create_directories("Data");
+        std::filesystem::create_directories("Data/Samples");
+        std::filesystem::create_directories("Data/Parents");
+        std::filesystem::create_directories("Data/R1Scores");
+        std::filesystem::create_directories("Data/R1Avail");
+        std::filesystem::create_directories("Data/R1");
+        filename.str("");
+        filename << "Data/Samples/samples" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
+        filename.str("");
+        filename << "Data/Parents/parents" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_treeParentIdx_, filename.str(), maxTreeSize_, 1);
+        filename.str("");
+        filename << "Data/R1Scores/R1Scores" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_R1Score_, filename.str(), N_*N_, 1);
+        filename.str("");
+        filename << "Data/R1Avail/R1Avail" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_R1Avail_, filename.str(), N_*N_, 1);
+        filename.str("");
+        filename << "Data/R1/R1" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_R1_, filename.str(), N_*N_, 1);
 
     }
 
@@ -321,7 +320,6 @@ __global__ void propagateG(
         x0[threadIdx.x] = treeSamples[x0Idx * SAMPLE_DIM + threadIdx.x];
     }
     __syncthreads();
-
     curandState randState = randomStates[tid];
     float* x1 = &unexploredSamples[tid * SAMPLE_DIM];
     uParentIdx[tid] = x0Idx;
@@ -331,7 +329,8 @@ __global__ void propagateG(
     atomicAdd(&R1[r1], 1);
     atomicAdd(&R2[r2], 1);
     if(valid){
-        if(R1Scores[r1] >= R1Threshold[0]){
+        float rand = curand_uniform(&randState);
+        if(rand <= pow(R1Scores[r1],2)){
             GNew[tid] = true;
         }
         if(R1Avail[r1] == 0){
@@ -402,7 +401,7 @@ __global__ void updateR1(
         R1Score[tid] = 1.0f;
     }
     else {
-        R1Score[tid] = score;
+        R1Score[tid] = score / s_totalSum;
     }
 }
 
