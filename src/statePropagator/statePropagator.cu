@@ -7,7 +7,7 @@ bool propagateAndCheck(float* x0, float* x1, int numDisc, float agentLength, cur
     // Generate random controls
     float a = curand_uniform(state) * 10.0f - 5.0f;  // a between -10 and 10
     float steering = curand_uniform(state) * 2.0f * M_PI - M_PI;  // steering between -π and π
-    float duration = curand_uniform(state) * 0.4f + 0.1f;  // duration between 0.1 and 0.5
+    float duration = curand_uniform(state) * 1.0f + 0.05f;  // duration between 0.1 and 0.5
 
     float dt = duration / numDisc;
     float x = x0[0];
@@ -29,6 +29,11 @@ bool propagateAndCheck(float* x0, float* x1, int numDisc, float agentLength, cur
         // Propagate the state
         x += v * cos_theta * dt;
         y += v * sin_theta * dt;
+        // TODO: update this
+        if(x <= 0.0 || x >= 10.0 || y <= 0.0 || y >= 10.0) {
+            motionValid = false;
+            break;
+        }
         theta += (v / agentLength) * tan_steering * dt;
         v += a * dt;
 

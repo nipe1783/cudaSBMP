@@ -12,6 +12,7 @@
 #include "cuda_runtime.h"
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
+#include <iomanip> 
 #define _USE_MATH_DEFINES
 
 // A macro for checking the error codes of cuda runtime calls
@@ -53,6 +54,9 @@ template <typename T>
 void writeVectorToCSV(const thrust::host_vector<T>& vec, const std::string& filename, int rows, int cols) {
     std::ofstream file;
     file.open(filename);
+
+    // Set precision for floating-point numbers
+    file << std::fixed << std::setprecision(10);
 
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {

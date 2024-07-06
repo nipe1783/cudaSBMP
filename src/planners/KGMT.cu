@@ -4,7 +4,7 @@
 
 #define SAMPLE_DIM 7
 #define STATE_DIM 4
-#define NUM_R2 16
+#define NUM_R2 8
 #define NUM_R1 16
 
 KGMT::KGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, float agentLength):
@@ -143,7 +143,6 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
             d_scanIdx_ptr_, 
             d_activeIdx_ptr_);
 
-        
         blockSizeActive = 32;
         gridSizeActive = std::min(activeSize, int(floor(maxTreeSize_ / blockSizeActive)));
         propagateG<<<gridSizeActive, blockSizeActive>>>(
@@ -173,7 +172,7 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
             d_R1Score_ptr_,
             d_obstacles,
             obstaclesCount);
-        
+
         // UPDATE G:
         thrust::exclusive_scan(d_GNew_.begin(), d_GNew_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
         activeSize = d_scanIdx_[maxTreeSize_-1];
@@ -184,7 +183,7 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
             d_scanIdx_ptr_, 
             d_activeIdx_ptr_);
         gridSizeActive = std::min(activeSize, int(floor(maxTreeSize_ / blockSizeActive)));
-        blockSizeActive = 128;
+        blockSizeActive = 32;
         updateG<<<gridSizeActive, blockSizeActive>>>(
             d_treeSamples_ptr_, 
             d_unexploredSamples_ptr_, 
@@ -196,6 +195,7 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
             activeSize, 
             treeSize_);
         
+        
         treeSize_ += activeSize;
 
         cudaMemcpy(&costToGoal_, d_costToGoal, sizeof(float), cudaMemcpyDeviceToHost);
@@ -206,28 +206,33 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
         }
 
         
-        std::ostringstream filename;
-        std::filesystem::create_directories("Data");
-        std::filesystem::create_directories("Data/Samples");
-        std::filesystem::create_directories("Data/Parents");
-        std::filesystem::create_directories("Data/R1Scores");
-        std::filesystem::create_directories("Data/R1Avail");
-        std::filesystem::create_directories("Data/R1");
-        filename.str("");
-        filename << "Data/Samples/samples" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
-        filename.str("");
-        filename << "Data/Parents/parents" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_treeParentIdx_, filename.str(), maxTreeSize_, 1);
-        filename.str("");
-        filename << "Data/R1Scores/R1Scores" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_R1Score_, filename.str(), N_*N_, 1);
-        filename.str("");
-        filename << "Data/R1Avail/R1Avail" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_R1Avail_, filename.str(), N_*N_, 1);
-        filename.str("");
-        filename << "Data/R1/R1" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_R1_, filename.str(), N_*N_, 1);
+        // std::ostringstream filename;
+        // std::filesystem::create_directories("Data");
+        // std::filesystem::create_directories("Data/Samples");
+        // std::filesystem::create_directories("Data/UnexploredSamples");
+        // std::filesystem::create_directories("Data/Parents");
+        // std::filesystem::create_directories("Data/R1Scores");
+        // std::filesystem::create_directories("Data/R1Avail");
+        // std::filesystem::create_directories("Data/R1");
+        // filename.str("");
+        // filename << "Data/Samples/samples" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
+        // filename.str("");
+        // filename << "Data/Parents/parents" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_treeParentIdx_, filename.str(), maxTreeSize_, 1);
+        // filename.str("");
+        // filename << "Data/R1Scores/R1Scores" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_R1Score_, filename.str(), N_*N_, 1);
+        // filename.str("");
+        // filename << "Data/R1Avail/R1Avail" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_R1Avail_, filename.str(), N_*N_, 1);
+        // filename.str("");
+        // filename << "Data/R1/R1" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_R1_, filename.str(), N_*N_, 1);
+        // filename.str("");
+        // filename << "Data/UnexploredSamples/unexploredSamples" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_unexploredSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
+        // printf("Tree size %d\n", treeSize_);
 
     }
 
@@ -330,7 +335,7 @@ __global__ void propagateG(
     atomicAdd(&R2[r2], 1);
     if(valid){
         float rand = curand_uniform(&randState);
-        if(rand <= pow(R1Scores[r1],2)){
+        if(rand <= R1Scores[r1] || R2Avail[r2] == 0){
             GNew[tid] = true;
         }
         if(R1Avail[r1] == 0){
@@ -408,7 +413,7 @@ __global__ void updateR1(
 __global__ void updateG(
     float* treeSamples, 
     float* unexploredSamples, 
-    int* unexploredParentIdx,
+    int* uParentIdx,
     int* treeParentIdx,
     bool* G,
     bool* GNew,
@@ -417,13 +422,16 @@ __global__ void updateG(
     int treeSize){
     
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    GNew[tid] = false;
+    G[tid] = false;
     if(tid >= GNewSize)
         return;
 
     // move valid unexplored sample to tree:
     int x1TreeIdx = treeSize + tid;
     int x1UnexploredIdx = GNewIdx[tid];
-    treeParentIdx[x1TreeIdx] = unexploredParentIdx[x1UnexploredIdx];
+    float* x1 = &unexploredSamples[x1UnexploredIdx * SAMPLE_DIM];
+    treeParentIdx[x1TreeIdx] = uParentIdx[x1UnexploredIdx];
     treeSamples[x1TreeIdx * SAMPLE_DIM] = unexploredSamples[x1UnexploredIdx * SAMPLE_DIM];
     treeSamples[x1TreeIdx * SAMPLE_DIM + 1] = unexploredSamples[x1UnexploredIdx * SAMPLE_DIM + 1];
     treeSamples[x1TreeIdx * SAMPLE_DIM + 2] = unexploredSamples[x1UnexploredIdx * SAMPLE_DIM + 2];
@@ -434,7 +442,7 @@ __global__ void updateG(
 
     // update G:
     G[x1TreeIdx] = true;
-    GNew[tid] = false;
+    
 }
 
 __global__ void initCurandStates(curandState* states, int numStates, int seed) {
