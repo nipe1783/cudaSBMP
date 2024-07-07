@@ -113,16 +113,6 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
     int maxIndex;
     float maxValue;
     while(itr < numIterations_){
-        // std::ostringstream filename;
-        // std::filesystem::create_directories("Data");
-        // std::filesystem::create_directories("Data/Samples");
-        // std::filesystem::create_directories("Data/UnexploredSamples");
-        // std::filesystem::create_directories("Data/Parents");
-        // std::filesystem::create_directories("Data/R1Scores");
-        // std::filesystem::create_directories("Data/R1Avail");
-        // std::filesystem::create_directories("Data/R1");
-        // std::filesystem::create_directories("Data/G");
-        // std::filesystem::create_directories("Data/GNew");
         itr++;
 
         // UPDATE GRID SCORES:
@@ -153,10 +143,6 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
             d_scanIdx_ptr_, 
             d_activeIdx_ptr_);
 
-        // filename.str("");
-        // filename << "Data/G/GBefore" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_G_, filename.str(), maxTreeSize_, 1);
-
         
 
         blockSizeActive = 32;
@@ -165,7 +151,7 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
             blockSizeActive = 128;
             gridSizeActive = int(floor(maxTreeSize_ / blockSizeActive));
             int remaining = maxTreeSize_ - treeSize_;
-            int iterations = std::min(31 , int(float(remaining) / float(activeSize)));
+            int iterations = int(float(remaining) / float(activeSize));
             propagateGV2<<<gridSizeActive, blockSizeActive>>>(
                 activeSize, 
                 d_activeIdx_ptr_, 
@@ -229,14 +215,6 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
             height_);
         }
 
-        // filename.str("");
-        // filename << "Data/G/GAfterProp" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_G_, filename.str(), maxTreeSize_, 1);
-
-        // filename.str("");
-        // filename << "Data/GNew/GNew" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_GNew_, filename.str(), maxTreeSize_, 1);
-
         // UPDATE G:
         thrust::exclusive_scan(d_GNew_.begin(), d_GNew_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
         activeSize = d_scanIdx_[maxTreeSize_-1];
@@ -258,14 +236,6 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
             d_activeIdx_ptr_, 
             activeSize, 
             treeSize_);
-        
-        // filename.str("");
-        // filename << "Data/G/GAfterUpdate" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_G_, filename.str(), maxTreeSize_, 1);
-
-        // filename.str("");
-        // filename << "Data/GNew/GNewAfterUpdate" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_GNew_, filename.str(), maxTreeSize_, 1);
 
         
         
@@ -280,7 +250,16 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
 
         
         
-        
+        // std::ostringstream filename;
+        // std::filesystem::create_directories("Data");
+        // std::filesystem::create_directories("Data/Samples");
+        // std::filesystem::create_directories("Data/UnexploredSamples");
+        // std::filesystem::create_directories("Data/Parents");
+        // std::filesystem::create_directories("Data/R1Scores");
+        // std::filesystem::create_directories("Data/R1Avail");
+        // std::filesystem::create_directories("Data/R1");
+        // std::filesystem::create_directories("Data/G");
+        // std::filesystem::create_directories("Data/GNew");
         // filename.str("");
         // filename << "Data/Samples/samples" << itr << ".csv";
         // copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
@@ -304,6 +283,7 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
 
     double t_kgmt = (std::clock() - t_kgmtStart) / (double) CLOCKS_PER_SEC;
     std::cout << "time inside KGMT is " << t_kgmt << std::endl;
+    printf("Iteration %d, Tree size %d\n", itr, treeSize_);
 
     // move vectors to csv to be plotted.
     copyAndWriteVectorToCSV(d_treeSamples_, "samples.csv", maxTreeSize_, SAMPLE_DIM);
