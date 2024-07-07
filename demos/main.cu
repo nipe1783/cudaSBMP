@@ -17,13 +17,12 @@
 
 int main(void) {
     int sampleDim = 7;
-    float width = 10.0;
-    float height = 10.0;
+    float width = 20.0;
+    float height = 20.0;
     int N = 16;
     int n = 8;
-    int numIterations = 100;
-    int maxTreeSize = 50000;
-    int maxSampleSize = 100000;
+    int numIterations = 10;
+    int maxTreeSize = 30000;
     int numDisc = 10;
     float agentLength = 1.0;
 

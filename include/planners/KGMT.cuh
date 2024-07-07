@@ -135,7 +135,40 @@ __global__ void propagateG(
     float* R1Threshold,
     float* R1Scores,
     float* obstacles,
-    int obstacleCount);
+    int obstacleCount,
+    float width,
+    float height);
+
+__global__ void propagateGV2(
+    int sizeG, 
+    int* activeGIdx, 
+    bool* G,
+    bool* GNew,
+    float* treeSamples,
+    float* unexploredSamples,
+    int* uParentIdx,
+    int* R1Valid,
+    int* R2Valid,
+    int* R1Invalid,
+    int* R2Invalid,
+    int* R1,
+    int* R2,
+    int* R1Avail,
+    int* R2Avail,
+    int N,
+    int n,
+    float R1Size,
+    float R2Size,
+    curandState* randomStates,
+    int numDisc,
+    float agentLength,
+    float* R1Threshold,
+    float* R1Scores,
+    float* obstacles,
+    int obstacleCount,
+    int iterations,
+    float width,
+    float height);
 
 __global__ void updateR1(
     float* R1Score, 

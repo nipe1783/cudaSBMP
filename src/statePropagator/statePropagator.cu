@@ -3,7 +3,16 @@
 #define WORKSPACE_DIM 2
 
 __device__
-bool propagateAndCheck(float* x0, float* x1, int numDisc, float agentLength, curandState* state, float* obstacles, int obstaclesCount) {
+bool propagateAndCheck(
+    float* x0, 
+    float* x1, 
+    int numDisc, 
+    float agentLength, 
+    curandState* state, 
+    float* obstacles, 
+    int obstaclesCount,
+    float width,
+    float height) {
     // Generate random controls
     float a = curand_uniform(state) * 10.0f - 5.0f;  // a between -10 and 10
     float steering = curand_uniform(state) * 2.0f * M_PI - M_PI;  // steering between -π and π
@@ -30,7 +39,7 @@ bool propagateAndCheck(float* x0, float* x1, int numDisc, float agentLength, cur
         x += v * cos_theta * dt;
         y += v * sin_theta * dt;
         // TODO: update this
-        if(x <= 0.0 || x >= 10.0 || y <= 0.0 || y >= 10.0) {
+        if(x <= 0.0 || x >= width|| y <= 0.0 || y >= height) {
             motionValid = false;
             break;
         }

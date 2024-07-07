@@ -113,6 +113,16 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
     int maxIndex;
     float maxValue;
     while(itr < numIterations_){
+        // std::ostringstream filename;
+        // std::filesystem::create_directories("Data");
+        // std::filesystem::create_directories("Data/Samples");
+        // std::filesystem::create_directories("Data/UnexploredSamples");
+        // std::filesystem::create_directories("Data/Parents");
+        // std::filesystem::create_directories("Data/R1Scores");
+        // std::filesystem::create_directories("Data/R1Avail");
+        // std::filesystem::create_directories("Data/R1");
+        // std::filesystem::create_directories("Data/G");
+        // std::filesystem::create_directories("Data/GNew");
         itr++;
 
         // UPDATE GRID SCORES:
@@ -143,9 +153,52 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
             d_scanIdx_ptr_, 
             d_activeIdx_ptr_);
 
+        // filename.str("");
+        // filename << "Data/G/GBefore" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_G_, filename.str(), maxTreeSize_, 1);
+
+        
+
         blockSizeActive = 32;
-        gridSizeActive = std::min(activeSize, int(floor(maxTreeSize_ / blockSizeActive)));
-        propagateG<<<gridSizeActive, blockSizeActive>>>(
+        gridSizeActive = activeSize;
+        if(blockSizeActive*gridSizeActive > maxTreeSize_ - treeSize_){
+            blockSizeActive = 128;
+            gridSizeActive = int(floor(maxTreeSize_ / blockSizeActive));
+            int remaining = maxTreeSize_ - treeSize_;
+            int iterations = std::min(31 , int(float(remaining) / float(activeSize)));
+            propagateGV2<<<gridSizeActive, blockSizeActive>>>(
+                activeSize, 
+                d_activeIdx_ptr_, 
+                d_G_ptr_,
+                d_GNew_ptr_,
+                d_treeSamples_ptr_, 
+                d_unexploredSamples_ptr_,
+                d_uParentIdx_ptr_,
+                d_R1Valid_ptr_,
+                d_R2Valid_ptr_,
+                d_R1Invalid_ptr_,
+                d_R2Invalid_ptr_,
+                d_R1_ptr_,
+                d_R2_ptr_,
+                d_R1Avail_ptr_,
+                d_R2Avail_ptr_,
+                N_,
+                n_,
+                R1Size_,
+                R2Size_,
+                d_randomStates, 
+                numDisc_, 
+                agentLength_,
+                d_R1Threshold_ptr_,
+                d_R1Score_ptr_,
+                d_obstacles,
+                obstaclesCount,
+                iterations,
+                width_,
+                height_);
+        }
+        else{
+            propagateG<<<gridSizeActive, blockSizeActive>>>(
             activeSize, 
             d_activeIdx_ptr_, 
             d_G_ptr_,
@@ -171,7 +224,18 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
             d_R1Threshold_ptr_,
             d_R1Score_ptr_,
             d_obstacles,
-            obstaclesCount);
+            obstaclesCount,
+            width_,
+            height_);
+        }
+
+        // filename.str("");
+        // filename << "Data/G/GAfterProp" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_G_, filename.str(), maxTreeSize_, 1);
+
+        // filename.str("");
+        // filename << "Data/GNew/GNew" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_GNew_, filename.str(), maxTreeSize_, 1);
 
         // UPDATE G:
         thrust::exclusive_scan(d_GNew_.begin(), d_GNew_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
@@ -182,8 +246,8 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
             d_GNew_ptr_, 
             d_scanIdx_ptr_, 
             d_activeIdx_ptr_);
-        gridSizeActive = std::min(activeSize, int(floor(maxTreeSize_ / blockSizeActive)));
         blockSizeActive = 32;
+        gridSizeActive = std::min(activeSize, int(floor(maxTreeSize_ / blockSizeActive)));
         updateG<<<gridSizeActive, blockSizeActive>>>(
             d_treeSamples_ptr_, 
             d_unexploredSamples_ptr_, 
@@ -194,6 +258,15 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
             d_activeIdx_ptr_, 
             activeSize, 
             treeSize_);
+        
+        // filename.str("");
+        // filename << "Data/G/GAfterUpdate" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_G_, filename.str(), maxTreeSize_, 1);
+
+        // filename.str("");
+        // filename << "Data/GNew/GNewAfterUpdate" << itr << ".csv";
+        // copyAndWriteVectorToCSV(d_GNew_, filename.str(), maxTreeSize_, 1);
+
         
         
         treeSize_ += activeSize;
@@ -206,14 +279,8 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
         }
 
         
-        // std::ostringstream filename;
-        // std::filesystem::create_directories("Data");
-        // std::filesystem::create_directories("Data/Samples");
-        // std::filesystem::create_directories("Data/UnexploredSamples");
-        // std::filesystem::create_directories("Data/Parents");
-        // std::filesystem::create_directories("Data/R1Scores");
-        // std::filesystem::create_directories("Data/R1Avail");
-        // std::filesystem::create_directories("Data/R1");
+        
+        
         // filename.str("");
         // filename << "Data/Samples/samples" << itr << ".csv";
         // copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
@@ -232,7 +299,6 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
         // filename.str("");
         // filename << "Data/UnexploredSamples/unexploredSamples" << itr << ".csv";
         // copyAndWriteVectorToCSV(d_unexploredSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
-        // printf("Tree size %d\n", treeSize_);
 
     }
 
@@ -308,7 +374,9 @@ __global__ void propagateG(
     float* R1Threshold,
     float* R1Scores,
     float* obstacles,
-    int obstaclesCount) {
+    int obstaclesCount,
+    float width,
+    float height) {
 
     // block expands x0 BLOCK_SIZE times.
     if (blockIdx.x >= sizeG)
@@ -328,7 +396,7 @@ __global__ void propagateG(
     curandState randState = randomStates[tid];
     float* x1 = &unexploredSamples[tid * SAMPLE_DIM];
     uParentIdx[tid] = x0Idx;
-    bool valid = propagateAndCheck(x0, x1, numDisc, agentLength, &randState, obstacles, obstaclesCount);
+    bool valid = propagateAndCheck(x0, x1, numDisc, agentLength, &randState, obstacles, obstaclesCount, width, height);
     int r1 = getR1(x1[0], x1[1], R1Size, N);
     int r2 = getR2(x1[0], x1[1], r1, R1Size, N , R2Size, n);
     atomicAdd(&R1[r1], 1);
@@ -354,6 +422,75 @@ __global__ void propagateG(
     randomStates[tid] = randState;
 
 }
+__global__ void propagateGV2(
+    int sizeG, 
+    int* activeGIdx, 
+    bool* G,
+    bool* GNew,
+    float* treeSamples,
+    float* unexploredSamples,
+    int* uParentIdx,
+    int* R1Valid,
+    int* R2Valid,
+    int* R1Invalid,
+    int* R2Invalid,
+    int* R1,
+    int* R2,
+    int* R1Avail,
+    int* R2Avail,
+    int N,
+    int n,
+    float R1Size,
+    float R2Size,
+    curandState* randomStates,
+    int numDisc,
+    float agentLength,
+    float* R1Threshold,
+    float* R1Scores,
+    float* obstacles,
+    int obstaclesCount,
+    int iterations,
+    float width,
+    float height){
+    
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int x0Idx = activeGIdx[tid];
+    if(!G[x0Idx]){
+        return;
+    }
+    G[x0Idx] = false;
+    float* x0 = &treeSamples[x0Idx * SAMPLE_DIM];
+    for(int i = 0; i < iterations; i++){
+        int x1Idx = tid * iterations + i;
+        float* x1 = &unexploredSamples[x1Idx * SAMPLE_DIM];
+        uParentIdx[x1Idx] = x0Idx;
+        bool valid = propagateAndCheck(x0, x1, numDisc, agentLength, &randomStates[x1Idx], obstacles, obstaclesCount, width, height);
+        int r1 = getR1(x1[0], x1[1], R1Size, N);
+        int r2 = getR2(x1[0], x1[1], r1, R1Size, N, R2Size, n);
+        atomicAdd(&R1[r1], 1);
+        atomicAdd(&R2[r2], 1);
+        if (valid) {
+            float rand = curand_uniform(&randomStates[x1Idx]);
+            if (rand <= R1Scores[r1] || R2Avail[r2] == 0) {
+                GNew[x1Idx] = true;
+            }
+            if (R1Avail[r1] == 0) {
+                atomicExch(&R1Avail[r1], 1);
+            }
+            if (R2Avail[r2] == 0) {
+                atomicExch(&R2Avail[r2], 1);
+            }
+            atomicAdd(&R2Valid[r2], 1);
+            atomicAdd(&R1Valid[r1], 1);
+        }
+        else {
+            atomicAdd(&R1Invalid[r1], 1);
+            atomicAdd(&R2Invalid[r2], 1);
+        }
+        randomStates[x1Idx] = randomStates[x1Idx];
+    }
+}
+
 
 // 1 Block Version. Each thread calculates 1 R1 cell.
 // TODO: Change it to a 2D block. each thread square calculates 1 R1 cell. Should help with fetching R2Avail.
@@ -423,7 +560,7 @@ __global__ void updateG(
     
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     GNew[tid] = false;
-    G[tid] = false;
+    // G[tid] = false;
     if(tid >= GNewSize)
         return;
 

@@ -9,4 +9,6 @@ __device__ bool propagateAndCheck(
     float agentLength, 
     curandState* state,
     float* obstacles,
-    int obstaclesCount);
+    int obstaclesCount,
+    float width,
+    float height);
