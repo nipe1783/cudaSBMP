@@ -24,7 +24,7 @@ obstacleFilePath = '\\wsl.localhost\Ubuntu-20.04\home\nic\dev\research\cudaSBMP\
 obstacles = readmatrix(obstacleFilePath);
 
 for i = 1:numFiles
-    % Construct file paths
+    % Construct file pathsgit 
     sampleFilePath = "\\wsl.localhost\Ubuntu-20.04\home\nic\dev\research\cudaSBMP\build\Data\Samples\samples" + i + ".csv";
     parentFilePath = "\\wsl.localhost\Ubuntu-20.04\home\nic\dev\research\cudaSBMP\build\Data\Parents\parents" + i + ".csv";
 
