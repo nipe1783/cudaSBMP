@@ -21,7 +21,7 @@ int main(void) {
     float height = 20.0;
     int N = 16;
     int n = 8;
-    int numIterations = 1;
+    int numIterations = 10;
     int maxTreeSize = 30000;
     int numDisc = 10;
     float agentLength = 1.0;

@@ -6,8 +6,16 @@
 #define STATE_DIM 4
 #define NUM_R2 8
 #define NUM_R1 16
-#define NUM_R1_CELLS 16*16
+#define NUM_R1_CELLS 256
 #define NUM_R2_CELLS 16*16*8*8
+
+#define CUDA_CHECK(call) do { \
+    cudaError_t err = call; \
+    if (err != cudaSuccess) { \
+        printf("CUDA error at %s %d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
+        return; \
+    } \
+} while (0)
 
 GoalBiasedKGMT::GoalBiasedKGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, float agentLength, float goalThreshold):
     width_(width), height_(height), N_(N), n_(n), numIterations_(numIterations), maxTreeSize_(maxTreeSize), numDisc_(numDisc), agentLength_(agentLength), goalThreshold_(goalThreshold){
@@ -19,30 +27,13 @@ GoalBiasedKGMT::GoalBiasedKGMT(float width, float height, int N, int n, int numI
     std::vector<int> fromNodes = grid.constructFromNodes();
     std::vector<int> toNodes = grid.constructToNodes();
     nR1Edges_ = fromNodes.size();
-
-    // Print fromNodes
-    // std::cout << "fromNodes: ";
-    // for (int node : fromNodes) {
-    //     std::cout << node << " ";
-    // }
-    // std::cout << std::endl;
-
-    // // Print toNodes
-    // std::cout << "toNodes: ";
-    // for (int node : toNodes) {
-    //     std::cout << node << " ";
-    // }
-    // std::cout << std::endl;
+    printf("nR1Edges: %d\n", nR1Edges_);
 
     d_G_ = thrust::device_vector<bool>(maxTreeSize);
     d_GNew_ = thrust::device_vector<bool>(maxTreeSize);
-    d_U_ = thrust::device_vector<bool>(maxTreeSize);
     d_scanIdx_ = thrust::device_vector<int>(maxTreeSize);
-    d_scanIdxGnew_= thrust::device_vector<int>(maxTreeSize);
-    d_R1scanIdx_ = thrust::device_vector<int>(N*N);
+    d_R1scanIdx_ = thrust::device_vector<int>(NUM_R1_CELLS);
     d_activeIdx_ = thrust::device_vector<int>(maxTreeSize);
-    d_activeUIdx_ = thrust::device_vector<int>(maxTreeSize);
-    d_activeR1Idx_ = thrust::device_vector<int>(N*N);
     d_treeParentIdx_ = thrust::device_vector<int>(maxTreeSize);
     d_treeSamples_ = thrust::device_vector<float>(maxTreeSize * SAMPLE_DIM);
     d_xGoal_ = thrust::device_vector<float>(SAMPLE_DIM);
@@ -53,49 +44,40 @@ GoalBiasedKGMT::GoalBiasedKGMT(float width, float height, int N, int n, int numI
     d_R1Score_ = thrust::device_vector<float>(N*N);
     d_R1Valid_ = thrust::device_vector<int>(N*N);
     d_R2Valid_ = thrust::device_vector<int>(N*N*n*n);
-    d_R1Invalid_ = thrust::device_vector<int>(N*N);
-    d_R2Invalid_ = thrust::device_vector<int>(N*N*n*n);
     d_R1_ = thrust::device_vector<int>(N*N);
     d_R2_ = thrust::device_vector<int>(N*N*n*n);
-    d_uValid_ = thrust::device_vector<bool>(maxTreeSize);
     d_costs_ = thrust::device_vector<float>(maxTreeSize);
     d_R1EdgeCosts_ = thrust::device_vector<float>(nR1Edges_);
     d_selR1Edge_ = thrust::device_vector<int>(nR1Edges_);
     d_connR1Edge_ = thrust::device_vector<float>(nR1Edges_);
     d_fromR1_ = thrust::device_vector<int>(nR1Edges_);
     d_toR1_ = thrust::device_vector<int>(nR1Edges_);
-    d_valR1Edge_ = thrust::device_vector<int>(nR1Edges_*n_*n_);
+    d_valR1Edge_ = thrust::device_vector<int>(nR1Edges_);
 
     d_G_ptr_ = thrust::raw_pointer_cast(d_G_.data());
     d_GNew_ptr_ = thrust::raw_pointer_cast(d_GNew_.data());
     d_treeSamples_ptr_ = thrust::raw_pointer_cast(d_treeSamples_.data());
     d_scanIdx_ptr_ = thrust::raw_pointer_cast(d_scanIdx_.data());
-    d_scanIdxGnew_ptr_ = thrust::raw_pointer_cast(d_scanIdxGnew_.data());
     d_R1scanIdx_ptr_ = thrust::raw_pointer_cast(d_R1scanIdx_.data());
     d_activeIdx_ptr_ = thrust::raw_pointer_cast(d_activeIdx_.data());
-    d_activeUIdx_ptr_ = thrust::raw_pointer_cast(d_activeUIdx_.data());
-    d_activeR1Idx_ptr_ = thrust::raw_pointer_cast(d_activeR1Idx_.data());
     d_treeParentIdx_ptr_ = thrust::raw_pointer_cast(d_treeParentIdx_.data());
     d_xGoal_ptr_ = thrust::raw_pointer_cast(d_xGoal_.data());
     d_unexploredSamples_ptr_ = thrust::raw_pointer_cast(d_unexploredSamples_.data());
     d_uParentIdx_ptr_ = thrust::raw_pointer_cast(d_uParentIdx_.data());
-    d_U_ptr_ = thrust::raw_pointer_cast(d_U_.data());
     d_R1Score_ptr_ = thrust::raw_pointer_cast(d_R1Score_.data());
     d_R1Avail_ptr_ = thrust::raw_pointer_cast(d_R1Avail_.data());
     d_R2Avail_ptr_ = thrust::raw_pointer_cast(d_R2Avail_.data());
     d_R1_ptr_ = thrust::raw_pointer_cast(d_R1_.data());
     d_R2_ptr_ = thrust::raw_pointer_cast(d_R2_.data());
-    d_uValid_ptr_ = thrust::raw_pointer_cast(d_uValid_.data());
     d_R1Valid_ptr_ = thrust::raw_pointer_cast(d_R1Valid_.data());
     d_R2Valid_ptr_ = thrust::raw_pointer_cast(d_R2Valid_.data());
-    d_R1Invalid_ptr_ = thrust::raw_pointer_cast(d_R1Invalid_.data());
-    d_R2Invalid_ptr_ = thrust::raw_pointer_cast(d_R2Invalid_.data());
     d_costs_ptr_ = thrust::raw_pointer_cast(d_costs_.data());
     d_R1EdgeCosts_ptr_ = thrust::raw_pointer_cast(d_R1EdgeCosts_.data());
     d_selR1Edge_ptr_ = thrust::raw_pointer_cast(d_selR1Edge_.data());
     d_connR1Edge_ptr_ = thrust::raw_pointer_cast(d_connR1Edge_.data());
     d_fromR1_ptr_ = thrust::raw_pointer_cast(d_fromR1_.data());
-    d_valR1Edge_ptr_ = thrust::raw_pointer_cast(d_toR1_.data());
+    d_toR1_ptr_ = thrust::raw_pointer_cast(d_toR1_.data());
+    d_valR1Edge_ptr_ = thrust::raw_pointer_cast(d_valR1Edge_.data());
 
 
     cudaMalloc(&d_costToGoal, sizeof(float));
@@ -155,18 +137,23 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
         // UPDATE GRID SCORES:
         thrust::exclusive_scan(d_R1Avail_.begin(), d_R1Avail_.end(), d_R1scanIdx_.begin(), 0, thrust::plus<int>());
         activeSize = d_R1scanIdx_[N_*N_-1];
-        updateR1_gb<<<1, N_*N_>>>(
-            d_R1Score_ptr_, 
-            d_R1Avail_ptr_, 
+        gridSizeActive = int(ceil(float(nR1Edges_) / float(NUM_R1_CELLS)));
+        updateR_gb<<<gridSizeActive, NUM_R1_CELLS>>>(
+            d_R1Score_ptr_,
             d_R2Avail_ptr_,
+            d_R1Avail_ptr_,
             d_R1Valid_ptr_,
-            d_R1Invalid_ptr_,
             d_R1_ptr_,
             n_, 
             0.01, 
-            R2Size_*R2Size_,
-            d_R1Threshold_ptr_,
-            activeSize);
+            d_R1EdgeCosts_ptr_,
+            activeSize,
+            d_fromR1_ptr_,
+            d_toR1_ptr_,
+            nR1Edges_,
+            d_selR1Edge_ptr_,
+            d_valR1Edge_ptr_,
+            d_R1Threshold_ptr_);
 
         // PROPAGATE G:
         thrust::exclusive_scan(d_G_.begin(), d_G_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
@@ -198,8 +185,6 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
                 d_uParentIdx_ptr_,
                 d_R1Valid_ptr_,
                 d_R2Valid_ptr_,
-                d_R1Invalid_ptr_,
-                d_R2Invalid_ptr_,
                 d_R1_ptr_,
                 d_R2_ptr_,
                 d_R1Avail_ptr_,
@@ -223,36 +208,34 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
         }
         else{
             propagateG_gb<<<gridSizeActive, blockSizeActive>>>(
-            activeSize, 
-            d_activeIdx_ptr_, 
-            d_G_ptr_,
-            d_GNew_ptr_,
-            d_treeSamples_ptr_, 
-            d_unexploredSamples_ptr_,
-            d_uParentIdx_ptr_,
-            d_R1Valid_ptr_,
-            d_R2Valid_ptr_,
-            d_R1Invalid_ptr_,
-            d_R2Invalid_ptr_,
-            d_R1_ptr_,
-            d_R2_ptr_,
-            d_R1Avail_ptr_,
-            d_R2Avail_ptr_,
-            N_,
-            n_,
-            R1Size_,
-            R2Size_,
-            d_randomStates, 
-            numDisc_, 
-            agentLength_,
-            d_R1Threshold_ptr_,
-            d_R1Score_ptr_,
-            d_obstacles,
-            obstaclesCount,
-            width_,
-            height_,
-            d_selR1Edge_ptr_,
-            d_valR1Edge_ptr_);
+                activeSize, 
+                d_activeIdx_ptr_, 
+                d_G_ptr_,
+                d_GNew_ptr_,
+                d_treeSamples_ptr_, 
+                d_unexploredSamples_ptr_,
+                d_uParentIdx_ptr_,
+                d_R1Valid_ptr_,
+                d_R2Valid_ptr_,
+                d_R1_ptr_,
+                d_R2_ptr_,
+                d_R1Avail_ptr_,
+                d_R2Avail_ptr_,
+                N_,
+                n_,
+                R1Size_,
+                R2Size_,
+                d_randomStates, 
+                numDisc_, 
+                agentLength_,
+                d_R1Threshold_ptr_,
+                d_R1Score_ptr_,
+                d_obstacles,
+                obstaclesCount,
+                width_,
+                height_,
+                d_selR1Edge_ptr_,
+                d_valR1Edge_ptr_);
         }
 
         // UPDATE G:
@@ -287,6 +270,7 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
 
         cudaMemcpy(&costToGoal_, d_costToGoal, sizeof(float), cudaMemcpyDeviceToHost);
         if(costToGoal_ != 0){
+            printf("Goal Reached\n");
             break;
         }
         if(treeSize_ >= maxTreeSize_){
@@ -297,34 +281,38 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
 
         
         
-        // std::ostringstream filename;
-        // std::filesystem::create_directories("Data");
-        // std::filesystem::create_directories("Data/Samples");
-        // std::filesystem::create_directories("Data/UnexploredSamples");
-        // std::filesystem::create_directories("Data/Parents");
-        // std::filesystem::create_directories("Data/R1Scores");
-        // std::filesystem::create_directories("Data/R1Avail");
-        // std::filesystem::create_directories("Data/R1");
-        // std::filesystem::create_directories("Data/G");
-        // std::filesystem::create_directories("Data/GNew");
-        // filename.str("");
-        // filename << "Data/Samples/samples" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
-        // filename.str("");
-        // filename << "Data/Parents/parents" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_treeParentIdx_, filename.str(), maxTreeSize_, 1);
-        // filename.str("");
-        // filename << "Data/R1Scores/R1Scores" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_R1Score_, filename.str(), N_*N_, 1);
-        // filename.str("");
-        // filename << "Data/R1Avail/R1Avail" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_R1Avail_, filename.str(), N_*N_, 1);
-        // filename.str("");
-        // filename << "Data/R1/R1" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_R1_, filename.str(), N_*N_, 1);
-        // filename.str("");
-        // filename << "Data/UnexploredSamples/unexploredSamples" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_unexploredSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
+        std::ostringstream filename;
+        std::filesystem::create_directories("Data");
+        std::filesystem::create_directories("Data/Samples");
+        std::filesystem::create_directories("Data/UnexploredSamples");
+        std::filesystem::create_directories("Data/Parents");
+        std::filesystem::create_directories("Data/R1Scores");
+        std::filesystem::create_directories("Data/R1Edges");
+        std::filesystem::create_directories("Data/R1Avail");
+        std::filesystem::create_directories("Data/R1");
+        std::filesystem::create_directories("Data/G");
+        std::filesystem::create_directories("Data/GNew");
+        filename.str("");
+        filename << "Data/Samples/samples" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
+        filename.str("");
+        filename << "Data/Parents/parents" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_treeParentIdx_, filename.str(), maxTreeSize_, 1);
+        filename.str("");
+        filename << "Data/R1Scores/R1Scores" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_R1Score_, filename.str(), N_*N_, 1);
+        filename.str("");
+        filename << "Data/R1Avail/R1Avail" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_R1Avail_, filename.str(), N_*N_, 1);
+        filename.str("");
+        filename << "Data/R1/R1" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_R1_, filename.str(), N_*N_, 1);
+        filename.str("");
+        filename << "Data/UnexploredSamples/unexploredSamples" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_unexploredSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
+        filename.str("");
+        filename << "Data/R1Edges/R1Edges" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_R1EdgeCosts_, filename.str(), nR1Edges_, 1);
 
     }
 
@@ -342,8 +330,6 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
     copyAndWriteVectorToCSV(d_R1Avail_, "R1Avail.csv", N_*N_, 1);
     copyAndWriteVectorToCSV(d_R1Valid_, "R1Valid.csv", N_*N_, 1);
     copyAndWriteVectorToCSV(d_R2Valid_, "R2Valid.csv", N_*N_*n_*n_, 1);
-    copyAndWriteVectorToCSV(d_R1Invalid_, "R1Invalid.csv", N_*N_, 1);
-    copyAndWriteVectorToCSV(d_R2Invalid_, "R2Invalid.csv", N_*N_*n_*n_, 1);
     copyAndWriteVectorToCSV(d_R1Score_, "R1Score.csv", N_*N_, 1);
     copyAndWriteVectorToCSV(d_R1_, "R1.csv", N_*N_, 1);
 
@@ -355,44 +341,80 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
 
 __global__
 void updateR_gb(
-    float* R1Score, 
-    int* R1Avail, 
-    int* R2Avail, 
-    int* R1Valid, 
-    int* R1Invalid,
-    int* R1Sel,
+    float* R1Score,
+    int* R2Avail,
+    int* R1Avail,  
+    int* R1Valid,
+    int* R1,
     int n, 
     float epsilon, 
-    float R1Vol,
-    float* R1Threshold,
     float* R1EdgeCosts,
-    int* selR1Edge,
-    float* valR1Edge,
     int activeSize,
     int* fromR1,
-    int* toR1) 
+    int* toR1,
+    int nR1Edges,
+    int* selR1Edge,
+    int* valR1Edge,
+    float* R1Threshold) 
 {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    // calculate alpha[Ri]
+
     __shared__ float s_alpha[NUM_R1_CELLS];
-    if(tid < NUM_R1_CELLS){
-        int nValid = R1Valid[tid];
+    
+    if (tid >= nR1Edges) {
+        return;
+    }
+
+    if (threadIdx.x < NUM_R1_CELLS) {
+        int nValid = R1Valid[threadIdx.x];
         float covR = 0.0f;
-        for(int i = tid * NUM_R2_CELLS; i < (tid + 1) * NUM_R2_CELLS; i++){
-            covR += R2Avail[i];
+        // Ensure no out-of-bounds access
+        if (threadIdx.x * NUM_R2_CELLS < n && (threadIdx.x + 1) * NUM_R2_CELLS <= n) {
+            for (int i = threadIdx.x * NUM_R2_CELLS; i < (threadIdx.x + 1) * NUM_R2_CELLS; i++) {
+                covR += R2Avail[i];
+            }
+            covR /= NUM_R2_CELLS;
         }
-        covR /= NUM_R2_CELLS;
-        float freeVol = ((epsilon + nValid) / (epsilon + nValid + R1Invalid[tid]));
-        s_alpha[tid] =  1.0f / ((1 + covR) * (1 + pow(freeVol, 4)));
+
+        float freeVol = ((epsilon + nValid) / (epsilon + nValid + R1[threadIdx.x] - R1Valid[threadIdx.x]));
+        s_alpha[threadIdx.x] =  1.0f / ((1 + covR) * (1 + pow(freeVol, 4)));
+
+        if(blockIdx.x == 0){
+            __shared__ float s_totalSum;
+            float score = 0.0f;
+            if(R1Avail[tid] != 0){
+                score = pow(freeVol, 4) / ((1 + covR) * (1 + pow(R1[tid], 2)));
+            }
+            typedef cub::BlockReduce<float, NUM_R1*NUM_R1> BlockReduceFloatT;
+            __shared__ typename BlockReduceFloatT::TempStorage tempStorageFloat;
+            float blockSum = BlockReduceFloatT(tempStorageFloat).Sum(score);
+            if (threadIdx.x == 0) {
+                s_totalSum = blockSum;
+                R1Threshold[0] = s_totalSum / activeSize;
+            }
+            __syncthreads();
+            if(R1Avail[tid] == 0){
+                R1Score[tid] = 1.0f;
+            }
+            else {
+                R1Score[tid] = score / s_totalSum;
+            }
+        }
+
     }
     __syncthreads();
 
-    // calculate cost[Ri, Rj]
-    R1EdgeCosts[tid] = ((1 + pow(selR1Edge[tid],2) ) / (1 + pow(valR1Edge[tid], 2))) * s_alpha[fromR1[tid]] * s_alpha[toR1[tid]];
-
-
+    if (tid >= nR1Edges) {
+        return;
+    }
+    int from = fromR1[tid];
+    int to = toR1[tid];
+    if (from >= 0 && from < NUM_R1_CELLS && to >= 0 && to < NUM_R1_CELLS) {
+        R1EdgeCosts[tid] = (1 + pow(selR1Edge[tid],2)) / (1 + pow(valR1Edge[tid],2)) * s_alpha[from] * s_alpha[to];
+    }
 }
+
+
 
 // 1 Block Version. Each thread calculates 1 R1 cell.
 // TODO: Change it to a 2D block. each thread square calculates 1 R1 cell. Should help with fetching R2Avail.
@@ -436,7 +458,6 @@ __global__ void updateR1_gb(
     if (threadIdx.x == 0) {
         s_totalSum = blockSum;
         R1Threshold[0] = s_totalSum / activeSize;
-        // R1Threshold[0] = 0.01;
     }
     __syncthreads();
 
@@ -481,8 +502,6 @@ __global__ void propagateG_gb(
     int* uParentIdx,
     int* R1Valid,
     int* R2Valid,
-    int* R1Invalid,
-    int* R2Invalid,
     int* R1,
     int* R2,
     int* R1Avail,
@@ -508,11 +527,9 @@ __global__ void propagateG_gb(
         return;
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     __shared__ int x0Idx;
-    __shared__ int r1x0;
     if(threadIdx.x == 0){
         x0Idx = activeGIdx[blockIdx.x];
         G[x0Idx] = false;
-        r1x0 = getR1_gb(treeSamples[x0Idx * SAMPLE_DIM], treeSamples[x0Idx * SAMPLE_DIM + 1], R1Size, N);
     }
     __syncthreads();
     __shared__ float x0[SAMPLE_DIM];
@@ -526,10 +543,8 @@ __global__ void propagateG_gb(
     bool valid = propagateAndCheck(x0, x1, numDisc, agentLength, &randState, obstacles, obstaclesCount, width, height);
     int r1 = getR1_gb(x1[0], x1[1], R1Size, N);
     int r2 = getR2_gb(x1[0], x1[1], r1, R1Size, N , R2Size, n);
-    int r1Edge = r1x0 * NUM_R1_CELLS + r1;
     atomicAdd(&R1[r1], 1);
     atomicAdd(&R2[r2], 1);
-    atomicAdd(&selR1Edge[r1Edge], 1);
     if(valid){
         float rand = curand_uniform(&randState);
         if(rand <= R1Scores[r1] || R2Avail[r2] == 0){
@@ -541,13 +556,8 @@ __global__ void propagateG_gb(
         if(R2Avail[r2] == 0){
             atomicExch(&R2Avail[r2], 1);
         }
-        atomicAdd(&valR1Edge[r1Edge], 1);
         atomicAdd(&R2Valid[r2], 1);
         atomicAdd(&R1Valid[r1], 1);
-    }
-    else {
-        atomicAdd(&R1Invalid[r1], 1);
-        atomicAdd(&R2Invalid[r2], 1);
     }
     randomStates[tid] = randState;
 
@@ -562,8 +572,6 @@ __global__ void propagateGV2_gb(
     int* uParentIdx,
     int* R1Valid,
     int* R2Valid,
-    int* R1Invalid,
-    int* R2Invalid,
     int* R1,
     int* R2,
     int* R1Avail,
@@ -600,10 +608,8 @@ __global__ void propagateGV2_gb(
         bool valid = propagateAndCheck(x0, x1, numDisc, agentLength, &randomStates[x1Idx], obstacles, obstaclesCount, width, height);
         int r1 = getR1_gb(x1[0], x1[1], R1Size, N);
         int r2 = getR2_gb(x1[0], x1[1], r1, R1Size, N, R2Size, n);
-        int r1Edge = r1x0 * NUM_R1_CELLS + r1;
         atomicAdd(&R1[r1], 1);
         atomicAdd(&R2[r2], 1);
-        atomicAdd(&selR1Edge[r1Edge], 1);
         if (valid) {
             float rand = curand_uniform(&randomStates[x1Idx]);
             if (rand <= R1Scores[r1] || R2Avail[r2] == 0) {
@@ -615,13 +621,8 @@ __global__ void propagateGV2_gb(
             if (R2Avail[r2] == 0) {
                 atomicExch(&R2Avail[r2], 1);
             }
-            atomicAdd(&valR1Edge[r1Edge], 1);
             atomicAdd(&R2Valid[r2], 1);
             atomicAdd(&R1Valid[r1], 1);
-        }
-        else {
-            atomicAdd(&R1Invalid[r1], 1);
-            atomicAdd(&R2Invalid[r2], 1);
         }
         randomStates[x1Idx] = randomStates[x1Idx];
     }

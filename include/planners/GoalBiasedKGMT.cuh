@@ -45,14 +45,10 @@ class GoalBiasedKGMT
         int nR1Edges_;
         thrust::device_vector<bool> d_G_; // Set of samples to be expanded in current iteration.
         thrust::device_vector<bool> d_GNew_;
-        thrust::device_vector<bool> d_U_;
-        thrust::device_vector<bool> d_uValid_;
         thrust::device_vector<int> d_scanIdx_; // stores scan of G. ex: G = [0, 1, 0, 1, 1, 0, 1] -> scanIdx = [0,0,1,1,2,3,3]. Used to find active samples in G.
-        thrust::device_vector<int> d_scanIdxGnew_;
         thrust::device_vector<int> d_R1scanIdx_;
         thrust::device_vector<int> d_activeIdx_;
         thrust::device_vector<int> d_activeR1Idx_;
-        thrust::device_vector<int> d_activeUIdx_;
         thrust::device_vector<int> d_treeParentIdx_; // Stores parent sample idx. Ex: d_parentIdx[10] = 3. Parent of sample 3 is 10.
         thrust::device_vector<int> d_uParentIdx_; // stores parent indeces for current unexplored iteration.
         thrust::device_vector<float> d_treeSamples_; // Stores all samples. Size is maxSamples_ * sampleDim_.
@@ -60,8 +56,6 @@ class GoalBiasedKGMT
         thrust::device_vector<float> d_xGoal_;
         thrust::device_vector<int> d_R1Valid_;
         thrust::device_vector<int> d_R2Valid_;
-        thrust::device_vector<int> d_R1Invalid_;
-        thrust::device_vector<int> d_R2Invalid_;
         thrust::device_vector<int> d_R2_;
         thrust::device_vector<int> d_R1_; // number of times a sample has been located in region R1i.
         thrust::device_vector<int> d_R1Avail_;
@@ -84,7 +78,6 @@ class GoalBiasedKGMT
         int *d_scanIdxGnew_ptr_;
         int *d_activeIdx_ptr_;
         int *d_activeR1Idx_ptr_;
-        int *d_activeUIdx_ptr_;
         int *d_treeParentIdx_ptr_;
         int *d_uParentIdx_ptr_;
         float *d_treeSamples_ptr_;
@@ -94,8 +87,6 @@ class GoalBiasedKGMT
         int* d_R2Avail_ptr_;
         int* d_R1Valid_ptr_;
         int* d_R2Valid_ptr_;
-        int* d_R1Invalid_ptr_;
-        int* d_R2Invalid_ptr_;
         int* d_R1_ptr_;
         int* d_R2_ptr_;
         int* d_uR1_ptr_;
@@ -135,8 +126,6 @@ __global__ void propagateG_gb(
     int* uParentIdx,
     int* R1Valid,
     int* R2Valid,
-    int* R1Invalid,
-    int* R2Invalid,
     int* R1,
     int* R2,
     int* R1Avail,
@@ -167,8 +156,6 @@ __global__ void propagateGV2_gb(
     int* uParentIdx,
     int* R1Valid,
     int* R2Valid,
-    int* R1Invalid,
-    int* R2Invalid,
     int* R1,
     int* R2,
     int* R1Avail,
@@ -204,22 +191,21 @@ __global__ void updateR1_gb(
     int activeSize);
 
 __global__ void updateR_gb(
-    float* R1Score, 
-    int* R1Avail, 
-    int* R2Avail, 
-    int* R1Valid, 
-    int* R1Invalid,
-    int* R1Sel,
+    float* R1Score,
+    int* R2Avail,
+    int* R1Avail,  
+    int* R1Valid,
+    int* R1,
     int n, 
     float epsilon, 
-    float R1Vol,
-    float* R1Threshold,
     float* R1EdgeCosts,
-    int* selR1Edge,
-    float* connR1Edge,
     int activeSize,
     int* fromR1,
-    int* toR1);
+    int* toR1,
+    int nR1Edges,
+    int* selR1Edge,
+    int* valR1Edge,
+    float* R1Threshold);
 
 __global__ void updateG_gb(
         float* treeSamples, 
