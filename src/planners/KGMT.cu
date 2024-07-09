@@ -7,8 +7,8 @@
 #define NUM_R2 8
 #define NUM_R1 16
 
-KGMT::KGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, float agentLength):
-    width_(width), height_(height), N_(N), n_(n), numIterations_(numIterations), maxTreeSize_(maxTreeSize), numDisc_(numDisc), agentLength_(agentLength){
+KGMT::KGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, float agentLength, float goalThreshold):
+    width_(width), height_(height), N_(N), n_(n), numIterations_(numIterations), maxTreeSize_(maxTreeSize), numDisc_(numDisc), agentLength_(agentLength), goalThreshold_(goalThreshold){
 
     R1Size_ = width / N;
     R2Size_ = width / (n*N);
@@ -37,6 +37,7 @@ KGMT::KGMT(float width, float height, int N, int n, int numIterations, int maxTr
     d_R1_ = thrust::device_vector<int>(N*N);
     d_R2_ = thrust::device_vector<int>(N*N*n*n);
     d_uValid_ = thrust::device_vector<bool>(maxTreeSize);
+    d_costs_ = thrust::device_vector<float>(maxTreeSize);
 
     d_G_ptr_ = thrust::raw_pointer_cast(d_G_.data());
     d_GNew_ptr_ = thrust::raw_pointer_cast(d_GNew_.data());
@@ -62,6 +63,7 @@ KGMT::KGMT(float width, float height, int N, int n, int numIterations, int maxTr
     d_R2Valid_ptr_ = thrust::raw_pointer_cast(d_R2Valid_.data());
     d_R1Invalid_ptr_ = thrust::raw_pointer_cast(d_R1Invalid_.data());
     d_R2Invalid_ptr_ = thrust::raw_pointer_cast(d_R2Invalid_.data());
+    d_costs_ptr_ = thrust::raw_pointer_cast(d_costs_.data());
 
 
     cudaMalloc(&d_costToGoal, sizeof(float));
@@ -95,6 +97,7 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
     thrust::fill(d_R1Valid_ptr + r1_0, d_R1Valid_ptr + r1_0 + 1, 1);
 
     // initialize xGoal
+    printf("Goal: %f, %f\n", goal[0], goal[1]);
     cudaMemcpy(d_xGoal_ptr_, goal, SAMPLE_DIM * sizeof(float), cudaMemcpyHostToDevice);
     
     const int blockSize = 128;
@@ -235,13 +238,20 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
             d_GNew_ptr_,
             d_activeIdx_ptr_, 
             activeSize, 
-            treeSize_);
+            treeSize_,
+            d_costs_ptr_,
+            d_xGoal_ptr_,
+            goalThreshold_,
+            d_costToGoal);
 
         
         
         treeSize_ += activeSize;
 
         cudaMemcpy(&costToGoal_, d_costToGoal, sizeof(float), cudaMemcpyDeviceToHost);
+        if(costToGoal_ != 0){
+            break;
+        }
         if(treeSize_ >= maxTreeSize_){
             printf("Iteration %d, Tree size %d\n", itr, treeSize_);
             printf("Tree size exceeded maxTreeSize\n");
@@ -536,11 +546,21 @@ __global__ void updateG(
     bool* GNew,
     int* GNewIdx, 
     int GNewSize, 
-    int treeSize){
+    int treeSize,
+    float* costs,
+    float* xGoal,
+    float r,
+    float* costToGoal){
     
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     GNew[tid] = false;
-    // G[tid] = false;
+
+    __shared__ float s_xGoal[SAMPLE_DIM];
+    if (threadIdx.x < SAMPLE_DIM) {
+        s_xGoal[threadIdx.x] = xGoal[threadIdx.x];
+    }
+    __syncthreads();
+    
     if(tid >= GNewSize)
         return;
 
@@ -548,7 +568,8 @@ __global__ void updateG(
     int x1TreeIdx = treeSize + tid;
     int x1UnexploredIdx = GNewIdx[tid];
     float* x1 = &unexploredSamples[x1UnexploredIdx * SAMPLE_DIM];
-    treeParentIdx[x1TreeIdx] = uParentIdx[x1UnexploredIdx];
+    int x0Idx = uParentIdx[x1UnexploredIdx];
+    treeParentIdx[x1TreeIdx] = x0Idx;
     treeSamples[x1TreeIdx * SAMPLE_DIM] = unexploredSamples[x1UnexploredIdx * SAMPLE_DIM];
     treeSamples[x1TreeIdx * SAMPLE_DIM + 1] = unexploredSamples[x1UnexploredIdx * SAMPLE_DIM + 1];
     treeSamples[x1TreeIdx * SAMPLE_DIM + 2] = unexploredSamples[x1UnexploredIdx * SAMPLE_DIM + 2];
@@ -559,6 +580,15 @@ __global__ void updateG(
 
     // update G:
     G[x1TreeIdx] = true;
+
+    // update costs:
+    float cost = getCost(&treeSamples[x0Idx * SAMPLE_DIM], &treeSamples[x1TreeIdx * SAMPLE_DIM]);
+    costs[x1TreeIdx] = costs[x0Idx] + cost;
+
+    // check if x1 is the goal:
+    if(inGoalRegion(x1, s_xGoal, r)){
+       costToGoal[0] = costs[x1TreeIdx];
+    }
     
 }
 
@@ -596,4 +626,13 @@ __host__ __device__ int getR2(float x, float y, int r1, float R1Size, int N, flo
         return r1 * (n * n) + localR2; // Flattened index
     }
     return -1; // Invalid subcell
+}
+
+__device__ float getCost(float* x0, float* x1){
+    return x1[SAMPLE_DIM - 1]; // traj time
+}
+
+__device__ bool inGoalRegion(float* x, float* goal, float r){
+    float dist = sqrt(pow(x[0] - goal[0], 2) + pow(x[1] - goal[1], 2));
+    return dist < r;
 }
