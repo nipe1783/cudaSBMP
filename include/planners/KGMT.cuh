@@ -25,7 +25,7 @@ class KGMT
     public:
         // constructor
         KGMT() = default;
-        KGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, float agentLength);
+        KGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, float agentLength, float goalThreshold);
 
         // methods
         void plan(float* initial, float* goal, float *d_obstacles, int obstaclesCount);
@@ -40,6 +40,7 @@ class KGMT
         float costToGoal_; // Cost of the goal state
         float agentLength_; // Length of the agent. Used in state propagation.
         float R1Threshold_;
+        float goalThreshold_;
         thrust::device_vector<bool> d_G_; // Set of samples to be expanded in current iteration.
         thrust::device_vector<bool> d_GNew_;
         thrust::device_vector<bool> d_U_;
@@ -64,6 +65,7 @@ class KGMT
         thrust::device_vector<int> d_R1Avail_;
         thrust::device_vector<int> d_R2Avail_;
         thrust::device_vector<float> d_R1Score_; // expansion score of region R.
+        thrust::device_vector<float> d_costs_;
 
         bool *d_G_ptr_;
         bool *d_GNew_ptr_;
@@ -95,6 +97,7 @@ class KGMT
         float* d_R1Score_ptr_;
         float *d_costToGoal;
         float *d_R1Threshold_ptr_;
+        float* d_costs_ptr_;
 
         // occupancy grid:
         int N_; // Number of cols/rows in the workspace grid
@@ -184,20 +187,26 @@ __global__ void updateR1(
     int activeSize);
 
 __global__ void updateG(
-    float* treeSamples, 
+        float* treeSamples, 
     float* unexploredSamples, 
-    int* unexploredParentIdx,
+    int* uParentIdx,
     int* treeParentIdx,
     bool* G,
     bool* GNew,
     int* GNewIdx, 
     int GNewSize, 
-    int treeSize);
+    int treeSize,
+    float* costs,
+    float* xGoal,
+    float r,
+    float* costToGoal);
 
 __global__ void initCurandStates(curandState* states, int numStates, int seed);
 
 
 __host__ __device__ int getR1(float x, float y, float R1Size, int N);
 __host__ __device__ int getR2(float x, float y, int r1, float R1Size, int N, float R2Size, int n);
+__device__ float getCost(float* x0, float* x1);
+__device__ bool inGoalRegion(float* x, float* goal, float r);
 
 
