@@ -4,6 +4,7 @@
 #include "statePropagator/statePropagator.cuh"
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/iterator/constant_iterator.h>
+#include "occupancyMaps/OccupancyGrid.h"
 #include <cuda_runtime.h>
 #include <stdio.h>
 #include <cstdio>
@@ -20,18 +21,18 @@
 #include <cub/cub.cuh>
 #include <filesystem>
 
-class KGMT
+class GoalBiasedKGMT
 {
     public:
         // constructor
-        KGMT() = default;
-        KGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, float agentLength, float goalThreshold);
+        GoalBiasedKGMT() = default;
+        GoalBiasedKGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, float agentLength, float goalThreshold);
 
         // methods
         void plan(float* initial, float* goal, float *d_obstacles, int obstaclesCount);
 
         // fields
-        int numIterations_; // Number of iterations to run KGMT
+        int numIterations_; // Number of iterations to run GoalBiasedKGMT
         int maxTreeSize_; // Maximum number of samples to store. Similar to number of samples in PRM exceept it is initialized to 0s.
         int numDisc_; // Number of iterations when doing state propagation
         int treeSize_; // Current size of the tree. Informs where in the d_samples_ vector to add new samples.
@@ -41,6 +42,7 @@ class KGMT
         float agentLength_; // Length of the agent. Used in state propagation.
         float R1Threshold_;
         float goalThreshold_;
+        int nR1Edges_;
         thrust::device_vector<bool> d_G_; // Set of samples to be expanded in current iteration.
         thrust::device_vector<bool> d_GNew_;
         thrust::device_vector<bool> d_U_;
@@ -66,6 +68,12 @@ class KGMT
         thrust::device_vector<int> d_R2Avail_;
         thrust::device_vector<float> d_R1Score_; // expansion score of region R.
         thrust::device_vector<float> d_costs_;
+        thrust::device_vector<float> d_R1EdgeCosts_;
+        thrust::device_vector<int> d_selR1Edge_;
+        thrust::device_vector<float> d_connR1Edge_;
+        thrust::device_vector<int> d_fromR1_;
+        thrust::device_vector<int> d_toR1_;
+        thrust::device_vector<int> d_valR1Edge_;
 
         bool *d_G_ptr_;
         bool *d_GNew_ptr_;
@@ -98,6 +106,12 @@ class KGMT
         float *d_costToGoal;
         float *d_R1Threshold_ptr_;
         float* d_costs_ptr_;
+        float* d_R1EdgeCosts_ptr_;
+        int* d_selR1Edge_ptr_;
+        float* d_connR1Edge_ptr_;
+        int* d_fromR1_ptr_;
+        int* d_toR1_ptr_;
+        int* d_valR1Edge_ptr_;
 
         // occupancy grid:
         int N_; // Number of cols/rows in the workspace grid
@@ -108,10 +122,10 @@ class KGMT
         
 };
 
-// KGMT kernels:
-__global__ void findInd(int numSamples, bool* S, int* scanIdx, int* activeGIdx);
-__global__ void findInd(int numSamples, int* S, int* scanIdx, int* activeGIdx);
-__global__ void propagateG(
+// GoalBiasedKGMT kernels:
+__global__ void findInd_gb(int numSamples, bool* S, int* scanIdx, int* activeGIdx);
+__global__ void findInd_gb(int numSamples, int* S, int* scanIdx, int* activeGIdx);
+__global__ void propagateG_gb(
     int sizeG, 
     int* activeGIdx, 
     bool* G,
@@ -137,11 +151,13 @@ __global__ void propagateG(
     float* R1Threshold,
     float* R1Scores,
     float* obstacles,
-    int obstacleCount,
+    int obstaclesCount,
     float width,
-    float height);
+    float height,
+    int* selR1Edge,
+    int* valR1Edge);
 
-__global__ void propagateGV2(
+__global__ void propagateGV2_gb(
     int sizeG, 
     int* activeGIdx, 
     bool* G,
@@ -170,9 +186,11 @@ __global__ void propagateGV2(
     int obstacleCount,
     int iterations,
     float width,
-    float height);
+    float height,
+    int* selR1Edge,
+    int* valR1Edge);
 
-__global__ void updateR1(
+__global__ void updateR1_gb(
     float* R1Score, 
     int* R1Avail, 
     int* R2Avail, 
@@ -185,7 +203,25 @@ __global__ void updateR1(
     float* R1Threshold,
     int activeSize);
 
-__global__ void updateG(
+__global__ void updateR_gb(
+    float* R1Score, 
+    int* R1Avail, 
+    int* R2Avail, 
+    int* R1Valid, 
+    int* R1Invalid,
+    int* R1Sel,
+    int n, 
+    float epsilon, 
+    float R1Vol,
+    float* R1Threshold,
+    float* R1EdgeCosts,
+    int* selR1Edge,
+    float* connR1Edge,
+    int activeSize,
+    int* fromR1,
+    int* toR1);
+
+__global__ void updateG_gb(
         float* treeSamples, 
     float* unexploredSamples, 
     int* uParentIdx,
@@ -200,12 +236,11 @@ __global__ void updateG(
     float r,
     float* costToGoal);
 
-__global__ void initCurandStates(curandState* states, int numStates, int seed);
+__global__ void initCurandStates_gb(curandState* states, int numStates, int seed);
 
-
-__host__ __device__ int getR1(float x, float y, float R1Size, int N);
-__host__ __device__ int getR2(float x, float y, int r1, float R1Size, int N, float R2Size, int n);
-__device__ float getCost(float* x0, float* x1);
-__device__ bool inGoalRegion(float* x, float* goal, float r);
+__host__ __device__ int getR1_gb(float x, float y, float R1Size, int N);
+__host__ __device__ int getR2_gb(float x, float y, int r1, float R1Size, int N, float R2Size, int n);
+__device__ float getCost_gb(float* x0, float* x1);
+__device__ bool inGoalRegion_gb(float* x, float* goal, float r);
 
 
