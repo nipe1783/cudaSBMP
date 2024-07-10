@@ -4,7 +4,7 @@
 #include "statePropagator/statePropagator.cuh"
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/iterator/constant_iterator.h>
-#include "occupancyMaps/OccupancyGrid.h"
+#include "occupancyMaps/OccupancyGrid.cuh"
 #include <cuda_runtime.h>
 #include <stdio.h>
 #include <cstdio>
@@ -18,7 +18,6 @@
 #include <curand_kernel.h>
 #include <chrono>
 #include <ctime>
-#include <cub/cub.cuh>
 #include <filesystem>
 
 class GoalBiasedKGMT
@@ -43,6 +42,7 @@ class GoalBiasedKGMT
         float R1Threshold_;
         float goalThreshold_;
         int nR1Edges_;
+        int tableSize_;
         thrust::device_vector<bool> d_G_; // Set of samples to be expanded in current iteration.
         thrust::device_vector<bool> d_GNew_;
         thrust::device_vector<int> d_scanIdx_; // stores scan of G. ex: G = [0, 1, 0, 1, 1, 0, 1] -> scanIdx = [0,0,1,1,2,3,3]. Used to find active samples in G.
@@ -50,7 +50,7 @@ class GoalBiasedKGMT
         thrust::device_vector<int> d_activeIdx_;
         thrust::device_vector<int> d_activeR1Idx_;
         thrust::device_vector<int> d_treeParentIdx_; // Stores parent sample idx. Ex: d_parentIdx[10] = 3. Parent of sample 3 is 10.
-        thrust::device_vector<int> d_uParentIdx_; // stores parent indeces for current unexplored iteration.
+        thrust::device_vector<int> d_uParentIdx_; // stores parent indices for current unexplored iteration.
         thrust::device_vector<float> d_treeSamples_; // Stores all samples. Size is maxSamples_ * sampleDim_.
         thrust::device_vector<float> d_unexploredSamples_; // all unexplored samples of current iteration.
         thrust::device_vector<float> d_xGoal_;
@@ -68,6 +68,10 @@ class GoalBiasedKGMT
         thrust::device_vector<int> d_fromR1_;
         thrust::device_vector<int> d_toR1_;
         thrust::device_vector<int> d_valR1Edge_;
+        thrust::device_vector<int> d_fromNodes_; // fromNodes vector for edges
+        thrust::device_vector<int> d_toNodes_; // toNodes vector for edges
+        thrust::device_vector<int> d_edgeIndices_; // edge indices vector
+        thrust::device_vector<int> d_hashTable_; // hash table for fast edge look-up
 
         bool *d_G_ptr_;
         bool *d_GNew_ptr_;
@@ -103,6 +107,10 @@ class GoalBiasedKGMT
         int* d_fromR1_ptr_;
         int* d_toR1_ptr_;
         int* d_valR1Edge_ptr_;
+        int* d_fromNodes_ptr_;
+        int* d_toNodes_ptr_;
+        int* d_edgeIndices_ptr_;
+        int* d_hashTable_ptr_;
 
         // occupancy grid:
         int N_; // Number of cols/rows in the workspace grid
@@ -110,8 +118,8 @@ class GoalBiasedKGMT
         float R1Size_;
         float R2Size_;
         
-        
 };
+
 
 // GoalBiasedKGMT kernels:
 __global__ void findInd_gb(int numSamples, bool* S, int* scanIdx, int* activeGIdx);
@@ -144,7 +152,9 @@ __global__ void propagateG_gb(
     float width,
     float height,
     int* selR1Edge,
-    int* valR1Edge);
+    int* valR1Edge,
+    int* hashTable,
+    int tableSize);
 
 __global__ void propagateGV2_gb(
     int sizeG, 
@@ -223,9 +233,6 @@ __global__ void updateG_gb(
     float* costToGoal);
 
 __global__ void initCurandStates_gb(curandState* states, int numStates, int seed);
-
-__host__ __device__ int getR1_gb(float x, float y, float R1Size, int N);
-__host__ __device__ int getR2_gb(float x, float y, int r1, float R1Size, int N, float R2Size, int n);
 __device__ float getCost_gb(float* x0, float* x1);
 __device__ bool inGoalRegion_gb(float* x, float* goal, float r);
 

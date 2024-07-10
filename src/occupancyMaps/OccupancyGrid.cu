@@ -1,4 +1,4 @@
-#include "occupancyMaps/OccupancyGrid.h"
+#include "occupancyMaps/OccupancyGrid.cuh"
 
 // Default constructor
 OccupancyGrid::OccupancyGrid() : width_(0), height_(0), N_(0), numEdges_(0), cellSize_(0) {}
@@ -6,7 +6,7 @@ OccupancyGrid::OccupancyGrid() : width_(0), height_(0), N_(0), numEdges_(0), cel
 // Parameterized constructor
 OccupancyGrid::OccupancyGrid(float width, float height, int N)
     : width_(width), height_(height), N_(N), cellSize_(width / N) {
-    numEdges_ = N * N * 5; // Max 5 edges per cell
+    numEdges_ = N * N * 4; // Max 4 edges per cell
     grid_.resize(N * N, 0);
 }
 
@@ -17,9 +17,6 @@ std::vector<int> OccupancyGrid::constructFromNodes() {
     for (int row = 0; row < N_; ++row) {
         for (int col = 0; col < N_; ++col) {
             int currentNode = row * N_ + col;
-
-            // Add edge to itself
-            fromNodes.push_back(currentNode);
 
             // Add edge to the cell above if not on the top edge
             if (row > 0) {
@@ -54,9 +51,6 @@ std::vector<int> OccupancyGrid::constructToNodes() {
         for (int col = 0; col < N_; ++col) {
             int currentNode = row * N_ + col;
 
-            // Add edge to itself
-            toNodes.push_back(currentNode);
-
             // Add edge to the cell above if not on the top edge
             if (row > 0) {
                 toNodes.push_back((row - 1) * N_ + col);
@@ -80,4 +74,64 @@ std::vector<int> OccupancyGrid::constructToNodes() {
     }
 
     return toNodes;
+}
+
+__host__ __device__ int getR1_gb(float x, float y, float R1Size, int N) {
+    int cellX = static_cast<int>(x / R1Size);
+    int cellY = static_cast<int>(y / R1Size);
+    if (cellX >= 0 && cellX < N && cellY >= 0 && cellY < N) {
+        return cellY * N + cellX;
+    }
+    return -1; // Invalid cell
+}
+
+__host__ __device__ int getR2_gb(float x, float y, int r1, float R1Size, int N, float R2Size, int n) {
+    if (r1 == -1) {
+        return -1; // Invalid R1 cell, so R2 is also invalid
+    }
+
+    int cellY_R1 = r1 / N;
+    int cellX_R1 = r1 % N;
+
+    // Calculate the local coordinates within the R1 cell
+    float localX = x - cellX_R1 * R1Size;
+    float localY = y - cellY_R1 * R1Size;
+
+    int cellX_R2 = static_cast<int>(localX / R2Size);
+    int cellY_R2 = static_cast<int>(localY / R2Size);
+    if (cellX_R2 >= 0 && cellX_R2 < n && cellY_R2 >= 0 && cellY_R2 < n) {
+        int localR2 = cellY_R2 * n + cellX_R2;
+        return r1 * (n * n) + localR2; // Flattened index
+    }
+    return -1; // Invalid subcell
+}
+
+__device__ int hashFunction(int key, int size) {
+    return key % size;
+}
+
+__global__ void initHashMap(int* fromNodes, int* toNodes, int* edgeIndices, int* hashTable, int tableSize, int numEdges) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= numEdges) return;
+
+    int key = fromNodes[tid] * 100000 + toNodes[tid];
+    int hash = hashFunction(key, tableSize);
+
+    while (atomicCAS(&hashTable[2 * hash], -1, key) != -1) {
+        hash = (hash + 1) % tableSize;
+    }
+    hashTable[2 * hash + 1] = edgeIndices[tid];
+}
+
+__device__ int getEdgeIndex(int fromNode, int toNode, int* hashTable, int tableSize) {
+    int key = fromNode * 100000 + toNode;
+    int hash = hashFunction(key, tableSize);
+
+    while (hashTable[2 * hash] != key) {
+        if (hashTable[2 * hash] == -1) {
+            return -1; // Edge not found
+        }
+        hash = (hash + 1) % tableSize;
+    }
+    return hashTable[2 * hash + 1];
 }

@@ -9,25 +9,49 @@
 #define NUM_R1_CELLS 256
 #define NUM_R2_CELLS 16*16*8*8
 
-#define CUDA_CHECK(call) do { \
-    cudaError_t err = call; \
-    if (err != cudaSuccess) { \
-        printf("CUDA error at %s %d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
-        return; \
-    } \
-} while (0)
 
 GoalBiasedKGMT::GoalBiasedKGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, float agentLength, float goalThreshold):
     width_(width), height_(height), N_(N), n_(n), numIterations_(numIterations), maxTreeSize_(maxTreeSize), numDisc_(numDisc), agentLength_(agentLength), goalThreshold_(goalThreshold){
 
     R1Size_ = width / N;
-    R2Size_ = width / (n*N);
+    R2Size_ = width / (n * N);
 
     OccupancyGrid grid(width, height, N);
     std::vector<int> fromNodes = grid.constructFromNodes();
     std::vector<int> toNodes = grid.constructToNodes();
     nR1Edges_ = fromNodes.size();
     printf("nR1Edges: %d\n", nR1Edges_);
+    for(int i = 0; i < nR1Edges_; i++){
+        printf("i: %d, from: %d, to: %d\n", i+1, fromNodes[i], toNodes[i]);
+    }
+
+    // Allocate memory for the hash map
+    tableSize_ = 2 * nR1Edges_; // double the size to reduce collisions
+    thrust::device_vector<int> hashTable(2 * tableSize_, -1);
+    thrust::device_vector<int> edgeIndices(nR1Edges_);
+    thrust::sequence(edgeIndices.begin(), edgeIndices.end());
+
+    // Copy data to device
+    d_fromNodes_ = fromNodes;
+    d_toNodes_ = toNodes;
+    d_edgeIndices_ = edgeIndices;
+    d_hashTable_ = hashTable;
+
+    // Initialize the hash map
+    initHashMap<<<(nR1Edges_ + 255) / 256, 256>>>(
+        thrust::raw_pointer_cast(d_fromNodes_.data()),
+        thrust::raw_pointer_cast(d_toNodes_.data()),
+        thrust::raw_pointer_cast(d_edgeIndices_.data()),
+        thrust::raw_pointer_cast(d_hashTable_.data()),
+        tableSize_,
+        nR1Edges_);
+
+    cudaDeviceSynchronize();
+
+    d_fromNodes_ptr_ = thrust::raw_pointer_cast(d_fromNodes_.data());
+    d_toNodes_ptr_ = thrust::raw_pointer_cast(d_toNodes_.data());
+    d_edgeIndices_ptr_ = thrust::raw_pointer_cast(d_edgeIndices_.data());
+    d_hashTable_ptr_ = thrust::raw_pointer_cast(d_hashTable_.data());
 
     d_G_ = thrust::device_vector<bool>(maxTreeSize);
     d_GNew_ = thrust::device_vector<bool>(maxTreeSize);
@@ -235,7 +259,9 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
                 width_,
                 height_,
                 d_selR1Edge_ptr_,
-                d_valR1Edge_ptr_);
+                d_valR1Edge_ptr_,
+                d_hashTable_ptr_,
+                tableSize_);
         }
 
         // UPDATE G:
@@ -288,6 +314,8 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
         std::filesystem::create_directories("Data/Parents");
         std::filesystem::create_directories("Data/R1Scores");
         std::filesystem::create_directories("Data/R1Edges");
+        std::filesystem::create_directories("Data/R1EdgeSel");
+        std::filesystem::create_directories("Data/R1EdgeVal");
         std::filesystem::create_directories("Data/R1Avail");
         std::filesystem::create_directories("Data/R1");
         std::filesystem::create_directories("Data/G");
@@ -313,6 +341,13 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
         filename.str("");
         filename << "Data/R1Edges/R1Edges" << itr << ".csv";
         copyAndWriteVectorToCSV(d_R1EdgeCosts_, filename.str(), nR1Edges_, 1);
+        filename.str("");
+        filename << "Data/R1EdgeVal/R1EdgeVal" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_valR1Edge_, filename.str(), nR1Edges_, 1);
+        filename.str("");
+        filename << "Data/R1EdgeSel/R1EdgeSel" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_selR1Edge_, filename.str(), nR1Edges_, 1);
+
 
     }
 
@@ -520,7 +555,9 @@ __global__ void propagateG_gb(
     float width,
     float height,
     int* selR1Edge,
-    int* valR1Edge) {
+    int* valR1Edge,
+    int* hashTable,
+    int tableSize) {
 
     // block expands x0 BLOCK_SIZE times.
     if (blockIdx.x >= sizeG)
@@ -540,7 +577,7 @@ __global__ void propagateG_gb(
     curandState randState = randomStates[tid];
     float* x1 = &unexploredSamples[tid * SAMPLE_DIM];
     uParentIdx[tid] = x0Idx;
-    bool valid = propagateAndCheck(x0, x1, numDisc, agentLength, &randState, obstacles, obstaclesCount, width, height);
+    bool valid = propagateAndCheck_gb(x0, x1, numDisc, agentLength, &randState, obstacles, obstaclesCount, width, height, selR1Edge, valR1Edge, R1Size, N, hashTable, tableSize);
     int r1 = getR1_gb(x1[0], x1[1], R1Size, N);
     int r2 = getR2_gb(x1[0], x1[1], r1, R1Size, N , R2Size, n);
     atomicAdd(&R1[r1], 1);
@@ -688,35 +725,6 @@ __global__ void initCurandStates_gb(curandState* states, int numStates, int seed
     if (tid >= numStates)
         return;
     curand_init(seed, tid, 0, &states[tid]);
-}
-
-__host__ __device__ int getR1_gb(float x, float y, float R1Size, int N) {
-    int cellX = static_cast<int>(x / R1Size);
-    int cellY = static_cast<int>(y / R1Size);
-    if (cellX >= 0 && cellX < N && cellY >= 0 && cellY < N) {
-        return cellY * N + cellX;
-    }
-    return -1; // Invalid cell
-}
-__host__ __device__ int getR2_gb(float x, float y, int r1, float R1Size, int N, float R2Size, int n) {
-    if (r1 == -1) {
-        return -1; // Invalid R1 cell, so R2 is also invalid
-    }
-
-    int cellY_R1 = r1 / N;
-    int cellX_R1 = r1 % N;
-
-    // Calculate the local coordinates within the R1 cell
-    float localX = x - cellX_R1 * R1Size;
-    float localY = y - cellY_R1 * R1Size;
-
-    int cellX_R2 = static_cast<int>(localX / R2Size);
-    int cellY_R2 = static_cast<int>(localY / R2Size);
-    if (cellX_R2 >= 0 && cellX_R2 < n && cellY_R2 >= 0 && cellY_R2 < n) {
-        int localR2 = cellY_R2 * n + cellX_R2;
-        return r1 * (n * n) + localR2; // Flattened index
-    }
-    return -1; // Invalid subcell
 }
 
 __device__ float getCost_gb(float* x0, float* x1){

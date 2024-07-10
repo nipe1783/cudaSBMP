@@ -28,7 +28,7 @@ set(SOURCE_FILES
     src/planners/KGMT.cu
     src/planners/GoalBiasedKGMT.cu
     src/helper/helper.cu
-    src/occupancyMaps/OccupancyGrid.cpp
+    src/occupancyMaps/OccupancyGrid.cu
     src/collisionCheck/collisionCheck.cu
     src/statePropagator/statePropagator.cu
 )

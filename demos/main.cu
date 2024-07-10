@@ -21,7 +21,7 @@ int main(void) {
     float height = 20.0;
     int N = 16;
     int n = 8;
-    int numIterations = 10;
+    int numIterations = 4;
     int maxTreeSize = 30000;
     int numDisc = 10;
     float agentLength = 1.0;
@@ -31,8 +31,8 @@ int main(void) {
     // KGMT kgmt(width, height, N, n, numIterations, maxTreeSize, numDisc, agentLength, goalThreshold);
     float* initial = new float[sampleDim];
     float* goal = new float[sampleDim];
-    initial[0] = 5;
-    initial[1] = 5;
+    initial[0] = .5;
+    initial[1] = .5;
     initial[2] = 0;
     initial[3] = 0;
     initial[4] = 0;
