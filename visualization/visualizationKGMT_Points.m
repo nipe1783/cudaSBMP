@@ -18,15 +18,15 @@ alphaValue = 0.1;
 xGoal = [10, 10];
 
 % Obstacle file path
-obstacleFilePath = '\\wsl.localhost\Ubuntu-20.04\home\nic\dev\research\cudaSBMP\configurations\obstacles\obstacles.csv';
+obstacleFilePath = '/home/nicolas/dev/research/cudaSBMP/configurations/obstacles/obstacles.csv';
 
 % Read obstacle data
 obstacles = readmatrix(obstacleFilePath);
 
 for i = 1:numFiles
     % Construct file pathsgit 
-    sampleFilePath = "\\wsl.localhost\Ubuntu-20.04\home\nic\dev\research\cudaSBMP\build\Data\Samples\samples" + i + ".csv";
-    parentFilePath = "\\wsl.localhost\Ubuntu-20.04\home\nic\dev\research\cudaSBMP\build\Data\Parents\parents" + i + ".csv";
+    sampleFilePath = "/home/nicolas/dev/research/cudaSBMP/build/Data/Samples/samples" + i + ".csv";
+    parentFilePath = "/home/nicolas/dev/research/cudaSBMP/build/Data/Parents/parents" + i + ".csv";
 
     % Read data from files
     samples = readmatrix(sampleFilePath);

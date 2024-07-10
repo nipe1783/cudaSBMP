@@ -21,15 +21,15 @@ xGoal = [10, 10];
 alphaValue = 0.1;
 
 % Obstacle file path
-obstacleFilePath = '\\wsl.localhost\Ubuntu-20.04\home\nic\dev\research\cudaSBMP\configurations\obstacles\obstacles.csv';
+obstacleFilePath = '/home/nicolas/dev/research/cudaSBMP/configurations/obstacles/obstacles.csv';
 
 % Read obstacle data
 obstacles = readmatrix(obstacleFilePath);
 
 for i = 1:numFiles
     % Construct file paths
-    sampleFilePath = "\\wsl.localhost\Ubuntu-20.04\home\nic\dev\research\cudaSBMP\build\Data\Samples\samples" + i + ".csv";
-    parentFilePath = "\\wsl.localhost\Ubuntu-20.04\home\nic\dev\research\cudaSBMP\build\Data\Parents\parents" + i + ".csv";
+    sampleFilePath = "/home/nicolas/dev/research/cudaSBMP/build/Data/Samples/samples" + i + ".csv";
+    parentFilePath = "/home/nicolas/dev/research/cudaSBMP/build/Data/Parents/parents" + i + ".csv";
 
     % Read data from files
     samples = readmatrix(sampleFilePath);
@@ -99,6 +99,7 @@ for i = 1:numFiles
             theta = theta + (v / agentLength) * tan_steering * dt;
             v = v + u(1) * dt;
             segmentX = [segmentX, x];
+
             segmentY = [segmentY, y];
             % disp(['Iteration: ', num2str(k)]);
             % disp(['cos_theta: ', num2str(cos_theta)]);

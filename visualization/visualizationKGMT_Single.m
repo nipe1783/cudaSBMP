@@ -21,9 +21,9 @@ xGoal = [10, 10];
 alphaValue = 0.1;
 
 % File paths
-sampleFilePath = '\\wsl.localhost\Ubuntu-20.04\home\nic\dev\research\cudaSBMP\build\samples.csv';
-parentFilePath = '\\wsl.localhost\Ubuntu-20.04\home\nic\dev\research\cudaSBMP\build\parentRelations.csv';
-obstacleFilePath = '\\wsl.localhost\Ubuntu-20.04\home\nic\dev\research\cudaSBMP\configurations\obstacles\obstacles.csv';
+sampleFilePath = '/home/nicolas/dev/research/cudaSBMP/build/samples.csv';
+parentFilePath = '/home/nicolas/dev/research/cudaSBMP/build/parentRelations.csv';
+obstacleFilePath = '/home/nicolas/dev/research/cudaSBMP/configurations/obstacles/obstacles.csv';
 
 
 % Read obstacle data
