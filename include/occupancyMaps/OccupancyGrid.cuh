@@ -6,13 +6,15 @@
 
 class OccupancyGrid {
 public:
-    // Constructor
+    // Constructors
     OccupancyGrid();
     OccupancyGrid(float width, float height, int N);
 
     // Methods
     std::vector<int> constructFromNodes();
     std::vector<int> constructToNodes();
+    std::vector<int> constructVertexArray();
+    std::pair<std::vector<int>, std::vector<float>> constructEdgeAndWeightArrays();
 
 private:
     // Fields
@@ -24,8 +26,7 @@ private:
     std::vector<int> grid_;
 };
 
-
-
+// Global functions
 __host__ __device__ int getR1_gb(float x, float y, float R1Size, int N);
 __host__ __device__ int getR2_gb(float x, float y, int r1, float R1Size, int N, float R2Size, int n);
 __device__ int hashFunction(int key, int size);
