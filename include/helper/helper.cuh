@@ -77,3 +77,11 @@ void copyAndWriteVectorToCSV(const thrust::device_vector<T>& d_vec, const std::s
     cudaMemcpy(thrust::raw_pointer_cast(h_vec.data()), thrust::raw_pointer_cast(d_vec.data()), d_vec.size() * sizeof(T), cudaMemcpyDeviceToHost);
     writeVectorToCSV(h_vec, filename, rows, cols);
 }
+
+__device__ __forceinline__ float atomicMinFloat (float * addr, float value) {
+        float old;
+        old = (value >= 0) ? __int_as_float(atomicMin((int *)addr, __float_as_int(value))) :
+             __uint_as_float(atomicMax((unsigned int *)addr, __float_as_uint(value)));
+
+        return old;
+}

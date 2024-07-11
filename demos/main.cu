@@ -38,8 +38,8 @@ int main(void) {
     initial[4] = 0;
     initial[5] = 0;
     initial[6] = 0;
-    goal[0] = 2;
-    goal[1] = 18;
+    goal[0] = 10;
+    goal[1] = 10;
     goal[2] = 0;
     goal[3] = 0;
     goal[4] = 0;

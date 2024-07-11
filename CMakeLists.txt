@@ -31,6 +31,7 @@ set(SOURCE_FILES
     src/occupancyMaps/OccupancyGrid.cu
     src/collisionCheck/collisionCheck.cu
     src/statePropagator/statePropagator.cu
+    src/sssp/sssp.cu
 )
 
 # Add a library target for your non-CUDA code

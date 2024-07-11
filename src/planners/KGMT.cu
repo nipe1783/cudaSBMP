@@ -259,34 +259,34 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
 
         
         
-        // std::ostringstream filename;
-        // std::filesystem::create_directories("Data");
-        // std::filesystem::create_directories("Data/Samples");
-        // std::filesystem::create_directories("Data/UnexploredSamples");
-        // std::filesystem::create_directories("Data/Parents");
-        // std::filesystem::create_directories("Data/R1Scores");
-        // std::filesystem::create_directories("Data/R1Avail");
-        // std::filesystem::create_directories("Data/R1");
-        // std::filesystem::create_directories("Data/G");
-        // std::filesystem::create_directories("Data/GNew");
-        // filename.str("");
-        // filename << "Data/Samples/samples" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
-        // filename.str("");
-        // filename << "Data/Parents/parents" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_treeParentIdx_, filename.str(), maxTreeSize_, 1);
-        // filename.str("");
-        // filename << "Data/R1Scores/R1Scores" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_R1Score_, filename.str(), N_*N_, 1);
-        // filename.str("");
-        // filename << "Data/R1Avail/R1Avail" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_R1Avail_, filename.str(), N_*N_, 1);
-        // filename.str("");
-        // filename << "Data/R1/R1" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_R1_, filename.str(), N_*N_, 1);
-        // filename.str("");
-        // filename << "Data/UnexploredSamples/unexploredSamples" << itr << ".csv";
-        // copyAndWriteVectorToCSV(d_unexploredSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
+        std::ostringstream filename;
+        std::filesystem::create_directories("Data");
+        std::filesystem::create_directories("Data/Samples");
+        std::filesystem::create_directories("Data/UnexploredSamples");
+        std::filesystem::create_directories("Data/Parents");
+        std::filesystem::create_directories("Data/R1Scores");
+        std::filesystem::create_directories("Data/R1Avail");
+        std::filesystem::create_directories("Data/R1");
+        std::filesystem::create_directories("Data/G");
+        std::filesystem::create_directories("Data/GNew");
+        filename.str("");
+        filename << "Data/Samples/samples" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
+        filename.str("");
+        filename << "Data/Parents/parents" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_treeParentIdx_, filename.str(), maxTreeSize_, 1);
+        filename.str("");
+        filename << "Data/R1Scores/R1Scores" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_R1Score_, filename.str(), N_*N_, 1);
+        filename.str("");
+        filename << "Data/R1Avail/R1Avail" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_R1Avail_, filename.str(), N_*N_, 1);
+        filename.str("");
+        filename << "Data/R1/R1" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_R1_, filename.str(), N_*N_, 1);
+        filename.str("");
+        filename << "Data/UnexploredSamples/unexploredSamples" << itr << ".csv";
+        copyAndWriteVectorToCSV(d_unexploredSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
 
     }
 

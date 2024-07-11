@@ -19,6 +19,7 @@
 #include <chrono>
 #include <ctime>
 #include <filesystem>
+#include "sssp/sssp.cuh"
 
 class GoalBiasedKGMT
 {
@@ -43,6 +44,7 @@ class GoalBiasedKGMT
         float goalThreshold_;
         int nR1Edges_;
         int tableSize_;
+        bool* d_finished_ptr_;
         thrust::device_vector<bool> d_G_; // Set of samples to be expanded in current iteration.
         thrust::device_vector<bool> d_GNew_;
         thrust::device_vector<int> d_scanIdx_; // stores scan of G. ex: G = [0, 1, 0, 1, 1, 0, 1] -> scanIdx = [0,0,1,1,2,3,3]. Used to find active samples in G.
@@ -72,6 +74,7 @@ class GoalBiasedKGMT
         thrust::device_vector<int> d_toNodes_; // toNodes vector for edges
         thrust::device_vector<int> d_edgeIndices_; // edge indices vector
         thrust::device_vector<int> d_hashTable_; // hash table for fast edge look-up
+        thrust::device_vector<float> d_R1Dists_;
 
         bool *d_G_ptr_;
         bool *d_GNew_ptr_;
@@ -111,6 +114,8 @@ class GoalBiasedKGMT
         int* d_toNodes_ptr_;
         int* d_edgeIndices_ptr_;
         int* d_hashTable_ptr_;
+        float* d_R1Dists_ptr_;
+
 
         // occupancy grid:
         int N_; // Number of cols/rows in the workspace grid

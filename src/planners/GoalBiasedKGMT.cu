@@ -77,6 +77,7 @@ GoalBiasedKGMT::GoalBiasedKGMT(float width, float height, int N, int n, int numI
     d_fromR1_ = thrust::device_vector<int>(nR1Edges_);
     d_toR1_ = thrust::device_vector<int>(nR1Edges_);
     d_valR1Edge_ = thrust::device_vector<int>(nR1Edges_);
+    d_R1Dists_ = thrust::device_vector<float>(N*N);
 
     d_G_ptr_ = thrust::raw_pointer_cast(d_G_.data());
     d_GNew_ptr_ = thrust::raw_pointer_cast(d_GNew_.data());
@@ -102,6 +103,7 @@ GoalBiasedKGMT::GoalBiasedKGMT(float width, float height, int N, int n, int numI
     d_fromR1_ptr_ = thrust::raw_pointer_cast(d_fromR1_.data());
     d_toR1_ptr_ = thrust::raw_pointer_cast(d_toR1_.data());
     d_valR1Edge_ptr_ = thrust::raw_pointer_cast(d_valR1Edge_.data());
+    d_R1Dists_ptr_ = thrust::raw_pointer_cast(d_R1Dists_.data());
 
 
     cudaMalloc(&d_costToGoal, sizeof(float));
@@ -115,6 +117,8 @@ GoalBiasedKGMT::GoalBiasedKGMT(float width, float height, int N, int n, int numI
 
     thrust::copy(fromNodes.begin(), fromNodes.end(), d_fromR1_.begin());
     thrust::copy(toNodes.begin(), toNodes.end(), d_toR1_.begin());
+
+    cudaMalloc(&d_finished_ptr_, sizeof(bool));
 }
 
 void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCount) {
@@ -178,6 +182,8 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
             d_selR1Edge_ptr_,
             d_valR1Edge_ptr_,
             d_R1Threshold_ptr_);
+
+        sssp(NUM_R1_CELLS , nR1Edges_, d_R1EdgeCosts_ptr_, d_fromR1_ptr_, d_toR1_ptr_, d_R1Dists_ptr_, d_finished_ptr_);
 
         // PROPAGATE G:
         thrust::exclusive_scan(d_G_.begin(), d_G_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
