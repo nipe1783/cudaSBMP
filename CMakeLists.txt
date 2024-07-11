@@ -5,7 +5,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CUDA_STANDARD 17)
 
 find_package(CUDA REQUIRED)
-find_package(cudf REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED)
 find_package(yaml-cpp REQUIRED)
@@ -20,7 +19,6 @@ include_directories(
     ${Python3_INCLUDE_DIRS}
     ${Python3_NumPy_INCLUDE_DIRS}
     ${YAML_CPP_INCLUDE_DIR}
-    ${CUDF_INCLUDE_DIRS}
 )
 
 # Add the source files for your project
@@ -47,7 +45,6 @@ target_link_libraries(main
     ${CUDA_LIBRARIES}
     ${Boost_LIBRARIES}
     ${EIGEN3_LIBRARIES}
-    ${CUDF_LIBRARIES}
     yaml-cpp
     Python3::Python
     Python3::NumPy
