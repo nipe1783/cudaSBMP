@@ -96,7 +96,7 @@ bool propagateAndCheck_gb(
     // Generate random controls
     float a = curand_uniform(state) * 10.0f - 5.0f;  // a between -10 and 10
     float steering = curand_uniform(state) * 2.0f * M_PI - M_PI;  // steering between -π and π
-    float duration = curand_uniform(state) * 1.0f + 0.05f;  // duration between 0.1 and 0.5
+    float duration = curand_uniform(state) * 2.0f + 0.05f;  // duration between 0.1 and 0.5
 
     float dt = duration / numDisc;
     float x = x0[0];
@@ -148,13 +148,12 @@ bool propagateAndCheck_gb(
         if(edgeIndex != -1) {
             atomicAdd(&selR1Edge[edgeIndex], 1);
         }
-        if (!motionValid) {
-            break;
-        }
-        if(edgeIndex != -1) {
-            atomicAdd(&valR1Edge[edgeIndex], 1);
-        }
         x0R1 = x1R1;
+        if (motionValid) {
+            if(edgeIndex != -1) {
+                atomicAdd(&valR1Edge[edgeIndex], 1);
+            }
+        }
     }
 
     x1[0] = x;

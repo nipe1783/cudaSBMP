@@ -5,9 +5,9 @@
 #define SAMPLE_DIM 7
 #define STATE_DIM 4
 #define NUM_R2 8
-#define NUM_R1 16
-#define NUM_R1_CELLS 256
-#define NUM_R2_CELLS 16*16*8*8
+#define NUM_R1 8
+#define NUM_R1_CELLS 64
+#define NUM_R2_CELLS 8*8*8*8
 
 
 GoalBiasedKGMT::GoalBiasedKGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, float agentLength, float goalThreshold):
@@ -78,6 +78,7 @@ GoalBiasedKGMT::GoalBiasedKGMT(float width, float height, int N, int n, int numI
     d_toR1_ = thrust::device_vector<int>(nR1Edges_);
     d_valR1Edge_ = thrust::device_vector<int>(nR1Edges_);
     d_R1Dists_ = thrust::device_vector<float>(N*N);
+    d_predNode_ = thrust::device_vector<int>(NUM_R1_CELLS);
 
     d_G_ptr_ = thrust::raw_pointer_cast(d_G_.data());
     d_GNew_ptr_ = thrust::raw_pointer_cast(d_GNew_.data());
@@ -104,6 +105,7 @@ GoalBiasedKGMT::GoalBiasedKGMT(float width, float height, int N, int n, int numI
     d_toR1_ptr_ = thrust::raw_pointer_cast(d_toR1_.data());
     d_valR1Edge_ptr_ = thrust::raw_pointer_cast(d_valR1Edge_.data());
     d_R1Dists_ptr_ = thrust::raw_pointer_cast(d_R1Dists_.data());
+    d_predNode_ptr_ = thrust::raw_pointer_cast(d_predNode_.data());
 
 
     cudaMalloc(&d_costToGoal, sizeof(float));
@@ -143,6 +145,8 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
     // initialize xGoal
     printf("Goal: %f, %f\n", goal[0], goal[1]);
     cudaMemcpy(d_xGoal_ptr_, goal, SAMPLE_DIM * sizeof(float), cudaMemcpyHostToDevice);
+    int r1_goal = getR1_gb(goal[0], goal[1], R1Size_, N_);
+    int r1_initial = getR1_gb(initial[0], initial[1], R1Size_, N_);
     
     const int blockSize = 128;
 	const int gridSize = std::min((maxTreeSize_ + blockSize - 1) / blockSize, 2147483647);
@@ -183,7 +187,7 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
             d_valR1Edge_ptr_,
             d_R1Threshold_ptr_);
 
-        sssp(NUM_R1_CELLS , nR1Edges_, d_R1EdgeCosts_ptr_, d_fromR1_ptr_, d_toR1_ptr_, d_R1Dists_ptr_, d_finished_ptr_);
+        sssp(NUM_R1_CELLS , nR1Edges_, d_R1EdgeCosts_ptr_, d_fromR1_ptr_, d_toR1_ptr_, d_R1Dists_ptr_, d_finished_ptr_, d_predNode_ptr_, r1_initial, r1_goal);
 
         // PROPAGATE G:
         thrust::exclusive_scan(d_G_.begin(), d_G_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
@@ -195,8 +199,6 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
             d_G_ptr_, 
             d_scanIdx_ptr_, 
             d_activeIdx_ptr_);
-
-        
 
         blockSizeActive = 32;
         gridSizeActive = activeSize;
@@ -311,8 +313,6 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
             break;
         }
 
-        
-        
         // std::ostringstream filename;
         // std::filesystem::create_directories("Data");
         // std::filesystem::create_directories("Data/Samples");
@@ -450,7 +450,7 @@ void updateR_gb(
     }
     int from = fromR1[tid];
     int to = toR1[tid];
-    if (from >= 0 && from < NUM_R1_CELLS && to >= 0 && to < NUM_R1_CELLS) {
+    if (from >= 0 && from < NUM_R1_CELLS && to >= 0 && to < NUM_R1_CELLS && selR1Edge[tid] != 0) {
         R1EdgeCosts[tid] = (1 + pow(selR1Edge[tid],2)) / (1 + pow(valR1Edge[tid],2)) * s_alpha[from] * s_alpha[to];
     }
 }

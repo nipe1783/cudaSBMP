@@ -75,6 +75,7 @@ class GoalBiasedKGMT
         thrust::device_vector<int> d_edgeIndices_; // edge indices vector
         thrust::device_vector<int> d_hashTable_; // hash table for fast edge look-up
         thrust::device_vector<float> d_R1Dists_;
+        thrust::device_vector<int> d_predNode_;
 
         bool *d_G_ptr_;
         bool *d_GNew_ptr_;
@@ -115,6 +116,7 @@ class GoalBiasedKGMT
         int* d_edgeIndices_ptr_;
         int* d_hashTable_ptr_;
         float* d_R1Dists_ptr_;
+        int* d_predNode_ptr_;
 
 
         // occupancy grid:

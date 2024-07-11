@@ -6,7 +6,7 @@ clear all
 numFiles = 1;
 width = 20.0;
 height = 20.0;
-N = 16;
+N = 8;
 n = 8;
 R1_width = width / N;
 R1_height = height / N;
@@ -18,7 +18,7 @@ stateSize = 4;
 controlSize = 3;
 agentLength = 1;  % Car length
 xGoal = [10, 10];
-alphaValue = 0.1;
+alphaValue = 0.3;
 
 % File paths
 sampleFilePath = '/home/nicolas/dev/research/cudaSBMP/build/samples.csv';
@@ -55,14 +55,14 @@ for i = 1:numFiles
     end
 
     % Plot R2 cells within each R1 cell with transparency
-    for j = 0:N*n
-        x = j * R2_width;
-        patch([x x x x], [0 height height 0], 'k', 'EdgeColor', 'k', 'FaceColor', 'none', 'FaceAlpha', alphaValue, 'EdgeAlpha', alphaValue);
-    end
-    for j = 0:N*n
-        y = j * R2_height;
-        patch([0 width width 0], [y y y y], 'k', 'EdgeColor', 'k', 'FaceColor', 'none', 'FaceAlpha', alphaValue, 'EdgeAlpha', alphaValue);
-    end
+    % for j = 0:N*n
+    %     x = j * R2_width;
+    %     patch([x x x x], [0 height height 0], 'k', 'EdgeColor', 'k', 'FaceColor', 'none', 'FaceAlpha', alphaValue, 'EdgeAlpha', alphaValue);
+    % end
+    % for j = 0:N*n
+    %     y = j * R2_height;
+    %     patch([0 width width 0], [y y y y], 'k', 'EdgeColor', 'k', 'FaceColor', 'none', 'FaceAlpha', alphaValue, 'EdgeAlpha', alphaValue);
+    % end
 
     % Plot goal position
     plot(xGoal(1), xGoal(2), 'ko', 'MarkerFaceColor', 'g')
@@ -110,7 +110,7 @@ for i = 1:numFiles
             % disp(['v: ', num2str(v)]);
             % disp(' ');
         end
-        
+
         plot(segmentX, segmentY, '-.', 'Color', 'k', LineWidth=.01);
         plot(samples(j, 1), samples(j, 2), 'bo', 'MarkerFaceColor', 'b', MarkerSize=2);
     end

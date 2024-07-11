@@ -19,7 +19,10 @@ __host__  void sssp(
     int *d_fromNodes_ptr, 
     int *d_toNodes_ptr, 
     float* d_dist_ptr, 
-    bool* d_finished_ptr);
+    bool* d_finished_ptr,
+    int* d_predNode_ptr,
+    int r1_initial,
+    int r1_goal);
 
 __global__ void sssp_kernel(
     int numEdges, 
@@ -28,4 +31,5 @@ __global__ void sssp_kernel(
     int *fromNodes, 
     int *toNodes, 
     float* dist,
-    bool* finished);
+    bool* finished,
+    int* predNode);
