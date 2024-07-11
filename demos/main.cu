@@ -15,7 +15,8 @@
 
 #define WORKSPACE_DIM 2
 
-int main(void) {
+int main(void)
+{
     int sampleDim = 7;
     float width = 20.0;
     float height = 20.0;
@@ -46,12 +47,11 @@ int main(void) {
     goal[5] = 0;
     goal[6] = 0;
 
-    
     int numObstacles = 2;
-    float *d_obstacles;
+    float* d_obstacles;
     std::vector<float> obstacles = readObstaclesFromCSV("../configurations/obstacles/obstacles.csv", numObstacles, WORKSPACE_DIM);
-	CUDA_ERROR_CHECK(cudaMalloc(&d_obstacles, sizeof(float)*2*numObstacles*WORKSPACE_DIM));
-	CUDA_ERROR_CHECK(cudaMemcpy(d_obstacles, obstacles.data(), sizeof(float)*2*numObstacles*WORKSPACE_DIM, cudaMemcpyHostToDevice));
+    CUDA_ERROR_CHECK(cudaMalloc(&d_obstacles, sizeof(float) * 2 * numObstacles * WORKSPACE_DIM));
+    CUDA_ERROR_CHECK(cudaMemcpy(d_obstacles, obstacles.data(), sizeof(float) * 2 * numObstacles * WORKSPACE_DIM, cudaMemcpyHostToDevice));
     kgmtGB.plan(initial, goal, d_obstacles, numObstacles);
     // kgmt.plan(initial, goal, d_obstacles, numObstacles);
 

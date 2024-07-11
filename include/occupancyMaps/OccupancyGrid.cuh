@@ -4,7 +4,8 @@
 #include <vector>
 #include <cub/cub.cuh>
 
-class OccupancyGrid {
+class OccupancyGrid
+{
 public:
     // Constructors
     OccupancyGrid();
@@ -14,7 +15,7 @@ public:
     std::vector<int> constructFromNodes();
     std::vector<int> constructToNodes();
     std::vector<int> constructVertexArray();
-    std::pair<std::vector<int>, std::vector<float>> constructEdgeAndWeightArrays();
+    std::vector<int> constructEdgeAndWeightArrays();
 
 private:
     // Fields
