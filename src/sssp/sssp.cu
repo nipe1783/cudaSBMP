@@ -1,6 +1,6 @@
 #include "helper/helper.cuh"
 #include "sssp/sssp.cuh"
-#define NUM_ASYNCHRONOUS_ITERATIONS 10  // Number of async loop iterations before attempting to read results back
+#define NUM_ASYNCHRONOUS_ITERATIONS 20  // Number of async loop iterations before attempting to read results back
 #define BLOCK_SIZE 16
 
 std::vector<int> getShortestPath(int source, int target, int* predNode) {

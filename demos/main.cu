@@ -20,7 +20,7 @@ int main(void)
     int sampleDim = 7;
     float width = 20.0;
     float height = 20.0;
-    int N = 8;
+    int N = 16;
     int n = 8;
     int numIterations = 100;
     int maxTreeSize = 30000;

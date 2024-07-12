@@ -3,9 +3,9 @@
 #define SAMPLE_DIM 7
 #define STATE_DIM 4
 #define NUM_R2 8
-#define NUM_R1 8
-#define NUM_R1_CELLS 64
-#define NUM_R2_CELLS 8 * 8 * 8 * 8
+#define NUM_R1 16
+#define NUM_R1_CELLS 256
+#define NUM_R2_CELLS 256 * 8 * 8
 
 GoalBiasedKGMT::GoalBiasedKGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, float agentLength,
                                float goalThreshold)
