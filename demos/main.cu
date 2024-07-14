@@ -16,16 +16,17 @@
 
 #define WORKSPACE_DIM 2
 
-int main(void) {
-    int sampleDim = 7;
-    float width = 20.0;
-    float height = 20.0;
-    int N = 16;
-    int n = 8;
-    int numIterations = 100;
-    int maxTreeSize = 30000;
-    int numDisc = 10;
-    float agentLength = 1.0;
+int main(void)
+{
+    int sampleDim       = 7;
+    float width         = 20.0;
+    float height        = 20.0;
+    int N               = 16;
+    int n               = 8;
+    int numIterations   = 100;
+    int maxTreeSize     = 30000;
+    int numDisc         = 10;
+    float agentLength   = 1.0;
     float goalThreshold = 0.5;
 
     GoalBiasedKGMT kgmtGB(WS_SIZE, WS_SIZE, R1, R2, MAX_ITER, MAX_TREE_SIZE, NUM_DISC, UNI_LENGTH, GOAL_THRESH);

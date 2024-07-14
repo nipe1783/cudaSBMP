@@ -1,4 +1,3 @@
-close all
 clc
 clear all
 
@@ -21,9 +20,9 @@ xGoal = [10, 10];
 alphaValue = 0.3;
 
 % File paths
-sampleFilePath = '/home/nicolas/dev/research/cudaSBMP/build/samples.csv';
-parentFilePath = '/home/nicolas/dev/research/cudaSBMP/build/parentRelations.csv';
-obstacleFilePath = '/home/nicolas/dev/research/cudaSBMP/include/config/obstacles/obstacles.csv';
+sampleFilePath = '/home/nicolas/dev/research/KGMT/build/samples.csv';
+parentFilePath = '/home/nicolas/dev/research/KGMT/build/parentRelations.csv';
+obstacleFilePath = '/home/nicolas/dev/research/KGMT/include/config/obstacles/obstacles.csv';
 
 
 % Read obstacle data
