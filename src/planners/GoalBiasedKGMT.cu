@@ -500,7 +500,7 @@ propagateG_gb(int sizeG, int* activeGIdx, bool* G, bool* GNew, float* treeSample
     curandState randState = randomStates[tid];
     float* x1             = &unexploredSamples[tid * SAMPLE_DIM];
     uParentIdx[tid]       = x0Idx;
-    bool valid            = propagateAndCheck(x0, x1, numDisc, agentLength, &randState, obstacles, obstaclesCount, width, height);
+    bool valid            = propagateAndCheck(x0, x1, &randState, obstacles, obstaclesCount);
     int r1                = getR1_gb(x1[0], x1[1], R1Size, N);
     int r2                = getR2_gb(x1[0], x1[1], r1, R1Size, N, R2Size, n);
     atomicAdd(&R1[r1], 1);
@@ -545,9 +545,9 @@ propagateGV2_gb(int sizeG, int* activeGIdx, bool* G, bool* GNew, float* treeSamp
             int x1Idx         = tid * iterations + i;
             float* x1         = &unexploredSamples[x1Idx * SAMPLE_DIM];
             uParentIdx[x1Idx] = x0Idx;
-            bool valid = propagateAndCheck(x0, x1, numDisc, agentLength, &randomStates[x1Idx], obstacles, obstaclesCount, width, height);
-            int r1     = getR1_gb(x1[0], x1[1], R1Size, N);
-            int r2     = getR2_gb(x1[0], x1[1], r1, R1Size, N, R2Size, n);
+            bool valid        = propagateAndCheck(x0, x1, &randomStates[x1Idx], obstacles, obstaclesCount);
+            int r1            = getR1_gb(x1[0], x1[1], R1Size, N);
+            int r2            = getR2_gb(x1[0], x1[1], r1, R1Size, N, R2Size, n);
             atomicAdd(&R1[r1], 1);
             atomicAdd(&R2[r2], 1);
             if(valid)

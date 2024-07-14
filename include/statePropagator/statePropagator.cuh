@@ -3,9 +3,14 @@
 #include "collisionCheck/collisionCheck.cuh"
 #include "occupancyMaps/OccupancyGrid.cuh"
 
-__device__ bool propagateAndCheck(float* x0, float* x1, int numDisc, float agentLength, curandState* state, float* obstacles,
-                                  int obstaclesCount, float width, float height);
+__device__ bool propagateAndCheck(float* x0, float* x1, curandState* seed, float* obstacles, int obstaclesCount);
+__device__ bool propagateAndCheckUnicycle(float* x0, float* x1, curandState* seed, float* obstacles, int obstaclesCount);
+__device__ bool propagateAndCheckDubins(float* x0, float* x1, curandState* seed, float* obstacles, int obstaclesCount);
 
-__device__ bool
-propagateAndCheck_gb(float* x0, float* x1, int numDisc, float agentLength, curandState* state, float* obstacles, int obstaclesCount,
-                     float width, float height, int* selR1Edge, int* valR1Edge, float R1Size, int N, int* hashTable, int tableSize);
+typedef bool (*PropagateAndCheckFunc)(float*, float*, curandState*, float*, int);
+
+/***************************/
+/* GET PROPAGATION FUNCTION */
+/***************************/
+// --- Determins which dynamic model to use. ---
+__device__ PropagateAndCheckFunc getPropagateAndCheckFunc();

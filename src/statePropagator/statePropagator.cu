@@ -1,10 +1,17 @@
+
 #include "statePropagator/statePropagator.cuh"
 #include "config/config.h"
 
-#define WORKSPACE_DIM 2
+__device__ bool propagateAndCheck(float* x0, float* x1, curandState* seed, float* obstacles, int obstaclesCount)
+{
+    PropagateAndCheckFunc func = getPropagateAndCheckFunc();
+    return func ? func(x0, x1, seed, obstacles, obstaclesCount) : false;
+}
 
-__device__ bool propagateAndCheck(float* x0, float* x1, int numDisc, float agentLength, curandState* seed, float* obstacles,
-                                  int obstaclesCount, float width, float height)
+/***************************/
+/* UNICYCLE PROPAGATION FUNCTION */
+/***************************/
+__device__ bool propagateAndCheckUnicycle(float* x0, float* x1, curandState* seed, float* obstacles, int obstaclesCount)
 {
     float a        = UNI_MIN_ACC + curand_uniform(seed) * (UNI_MAX_ACC - UNI_MIN_ACC);
     float steering = UNI_MIN_STEERING + curand_uniform(seed) * (UNI_MAX_STEERING - UNI_MIN_STEERING);
@@ -64,88 +71,30 @@ __device__ bool propagateAndCheck(float* x0, float* x1, int numDisc, float agent
     return motionValid;
 }
 
-__device__ bool
-propagateAndCheck_gb(float* x0, float* x1, int numDisc, float agentLength, curandState* seed, float* obstacles, int obstaclesCount,
-                     float width, float height, int* selR1Edge, int* valR1Edge, float R1Size, int N, int* hashTable, int tableSize)
+/***************************/
+/* DUBINS PROPAGATION FUNCTION */
+/***************************/
+__device__ bool propagateAndCheckDubins(float* x0, float* x1, curandState* seed, float* obstacles, int obstaclesCount)
 {
-    // Generate random controls
-    float a        = UNI_MIN_ACC + curand_uniform(seed) * (UNI_MAX_ACC - UNI_MIN_ACC);
-    float steering = UNI_MIN_STEERING + curand_uniform(seed) * (UNI_MAX_STEERING - UNI_MIN_STEERING);
-    float duration = UNI_MIN_DT + curand_uniform(seed) * (UNI_MAX_DT - UNI_MIN_DT);
-    float dt       = duration / NUM_DISC;
+    printf("/***************************/\n");
+    printf("/* DUBINS: TODO */\n");
+    printf("/***************************/\n");
+    // TODO: Implement Dubins
+    return true;
+}
 
-    float x     = x0[0];
-    float y     = x0[1];
-    float theta = x0[2];
-    float v     = x0[3];
-
-    float cos_theta, sin_theta, tan_steering;
-    float bbMin[WORKSPACE_DIM], bbMax[WORKSPACE_DIM];
-
-    bool motionValid = true;
-
-    int x0R1 = getR1_gb(x0[0], x0[1], R1Size, N);
-    int x1R1;
-    for(int i = 0; i < numDisc; ++i)
+/***************************/
+/* GET PROPAGATION FUNCTION */
+/***************************/
+__device__ PropagateAndCheckFunc getPropagateAndCheckFunc()
+{
+    switch(MODEL)
         {
-            float v_state[WORKSPACE_DIM] = {x, y};
-            cos_theta                    = cosf(theta);
-            sin_theta                    = sinf(theta);
-            tan_steering                 = tanf(steering);
-
-            // Propagate the state
-            x += v * cos_theta * dt;
-            y += v * sin_theta * dt;
-            x1R1 = getR1_gb(x, y, R1Size, N);
-
-            if(x <= 0.0 || x >= width || y <= 0.0 || y >= height)
-                {
-                    motionValid = false;
-                    break;
-                }
-
-            theta += (v / agentLength) * tan_steering * dt;
-            v += a * dt;
-
-            float w_state[WORKSPACE_DIM] = {x, y};
-
-            for(int d = 0; d < WORKSPACE_DIM; ++d)
-                {
-                    if(v_state[d] > w_state[d])
-                        {
-                            bbMin[d] = w_state[d];
-                            bbMax[d] = v_state[d];
-                        }
-                    else
-                        {
-                            bbMin[d] = v_state[d];
-                            bbMax[d] = w_state[d];
-                        }
-                }
-
-            motionValid   = motionValid && isMotionValid(v_state, w_state, bbMin, bbMax, obstacles, obstaclesCount);
-            int edgeIndex = getEdgeIndex(x0R1, x1R1, hashTable, tableSize);
-            if(edgeIndex != -1)
-                {
-                    atomicAdd(&selR1Edge[edgeIndex], 1);
-                }
-            x0R1 = x1R1;
-            if(motionValid)
-                {
-                    if(edgeIndex != -1)
-                        {
-                            atomicAdd(&valR1Edge[edgeIndex], 1);
-                        }
-                }
+            case 0:
+                return propagateAndCheckUnicycle;
+            case 1:
+                return propagateAndCheckDubins;
+            default:
+                return nullptr;
         }
-
-    x1[0] = x;
-    x1[1] = y;
-    x1[2] = theta;
-    x1[3] = v;
-    x1[4] = a;
-    x1[5] = steering;
-    x1[6] = duration;
-
-    return motionValid;
 }

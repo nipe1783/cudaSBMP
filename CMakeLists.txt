@@ -25,7 +25,6 @@ include_directories(
 set(SOURCE_FILES
     src/agent/Agent.cpp
     src/state/State.cpp
-    src/planners/KGMT.cu
     src/planners/GoalBiasedKGMT.cu
     src/helper/helper.cu
     src/occupancyMaps/OccupancyGrid.cu
