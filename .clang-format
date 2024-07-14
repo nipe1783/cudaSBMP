@@ -20,7 +20,7 @@ BraceWrapping:
     AfterClass: true
     AfterControlStatement: true
     AfterEnum: true
-    AfterFunction: false
+    AfterFunction: true
     AfterNamespace: true
     AfterStruct: true
     AfterUnion: true
@@ -44,3 +44,5 @@ SortIncludes: false
 SpaceBeforeParens: Never
 SpaceBeforeAssignmentOperators: true
 SpacesInContainerLiterals: false
+
+AlignConsecutiveAssignments: true

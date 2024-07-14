@@ -12,6 +12,7 @@
 #include "planners/KGMT.cuh"
 #include "planners/GoalBiasedKGMT.cuh"
 #include "helper/helper.cuh"
+#include "config/config.h"
 
 #define WORKSPACE_DIM 2
 
@@ -27,35 +28,18 @@ int main(void) {
     float agentLength = 1.0;
     float goalThreshold = 0.5;
 
-    GoalBiasedKGMT kgmtGB(width, height, N, n, numIterations, maxTreeSize, numDisc, agentLength, goalThreshold);
+    GoalBiasedKGMT kgmtGB(WS_SIZE, WS_SIZE, R1, R2, MAX_ITER, MAX_TREE_SIZE, NUM_DISC, UNI_LENGTH, GOAL_THRESH);
     // KGMT kgmt(width, height, N, n, numIterations, maxTreeSize, numDisc, agentLength, goalThreshold);
-    float* initial = new float[sampleDim];
-    float* goal = new float[sampleDim];
-    initial[0] = .5;
-    initial[1] = .5;
-    initial[2] = 0;
-    initial[3] = 0;
-    initial[4] = 0;
-    initial[5] = 0;
-    initial[6] = 0;
-    goal[0] = 10;
-    goal[1] = 10;
-    goal[2] = 0;
-    goal[3] = 0;
-    goal[4] = 0;
-    goal[5] = 0;
-    goal[6] = 0;
+    float h_initial[SAMPLE_DIM] = {.5, .5, 0.0, 0.0, 0.0, 0.0, 0.0}, h_goal[SAMPLE_DIM] = {10, 10, 0.0, 0.0, 0.0, 0.0, 0.0};
 
     int numObstacles = 2;
     float* d_obstacles;
-    std::vector<float> obstacles = readObstaclesFromCSV("../configurations/obstacles/obstacles.csv", numObstacles, WORKSPACE_DIM);
+    std::vector<float> obstacles = readObstaclesFromCSV("../include/config/obstacles/obstacles.csv", numObstacles, WORKSPACE_DIM);
     CUDA_ERROR_CHECK(cudaMalloc(&d_obstacles, sizeof(float) * 2 * numObstacles * WORKSPACE_DIM));
     CUDA_ERROR_CHECK(cudaMemcpy(d_obstacles, obstacles.data(), sizeof(float) * 2 * numObstacles * WORKSPACE_DIM, cudaMemcpyHostToDevice));
-    kgmtGB.plan(initial, goal, d_obstacles, numObstacles);
+    kgmtGB.plan(h_initial, h_goal, d_obstacles, numObstacles);
     // kgmt.plan(initial, goal, d_obstacles, numObstacles);
 
     cudaFree(d_obstacles);
-    delete[] initial;
-    delete[] goal;
     return 0;
 }
