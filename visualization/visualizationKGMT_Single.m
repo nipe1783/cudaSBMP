@@ -6,7 +6,7 @@ clear all
 numFiles = 1;
 width = 20.0;
 height = 20.0;
-N = 8;
+N = 16;
 n = 8;
 R1_width = width / N;
 R1_height = height / N;

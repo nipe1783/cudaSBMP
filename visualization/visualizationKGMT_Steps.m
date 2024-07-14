@@ -3,7 +3,7 @@ clc
 clear all
 
 % Parameters
-numFiles = 10;
+numFiles = 5;
 width = 20.0;
 height = 20.0;
 N = 16;

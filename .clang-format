@@ -2,7 +2,7 @@ BasedOnStyle: Google
 Language: Cpp
 Standard: Cpp11
 
-ColumnLimit: 150
+ColumnLimit: 140
 
 AccessModifierOffset: -4
 IndentWidth: 4
@@ -44,4 +44,3 @@ SortIncludes: false
 SpaceBeforeParens: Never
 SpaceBeforeAssignmentOperators: true
 SpacesInContainerLiterals: false
-AlwaysBreakAfterDefinitionReturnType: Never

@@ -17,8 +17,7 @@ GoalBiasedKGMT::GoalBiasedKGMT(float width, float height, int N, int n, int numI
     , maxTreeSize_(maxTreeSize)
     , numDisc_(numDisc)
     , agentLength_(agentLength)
-    , goalThreshold_(goalThreshold)
-{
+    , goalThreshold_(goalThreshold) {
     R1Size_ = width / N;
     R2Size_ = width / (n * N);
 
@@ -29,7 +28,6 @@ GoalBiasedKGMT::GoalBiasedKGMT(float width, float height, int N, int n, int numI
     std::vector<int> edgeArray = grid.constructEdgeAndWeightArrays();
     std::vector<float> weightArray(edgeArray.size(), 1.0);
     h_finalizedVertices_ = new bool[NUM_R1_CELLS]();
-
 
     nR1Edges_ = fromNodes.size();
     printf("nR1Edges: %d\n", nR1Edges_);
@@ -107,7 +105,6 @@ GoalBiasedKGMT::GoalBiasedKGMT(float width, float height, int N, int n, int numI
     d_shortestDistances_ = thrust::device_vector<float>(NUM_R1_CELLS);
     d_updatingShortestDistances_ = thrust::device_vector<float>(NUM_R1_CELLS);
 
-
     d_G_ptr_ = thrust::raw_pointer_cast(d_G_.data());
     d_GNew_ptr_ = thrust::raw_pointer_cast(d_GNew_.data());
     d_treeSamples_ptr_ = thrust::raw_pointer_cast(d_treeSamples_.data());
@@ -160,8 +157,7 @@ GoalBiasedKGMT::GoalBiasedKGMT(float width, float height, int N, int n, int numI
     cudaMalloc(&d_finished_ptr_, sizeof(bool));
 }
 
-void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCount)
-{
+void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCount) {
     double t_kgmtStart = std::clock();
 
     // initialize vectors with root of tree
@@ -212,8 +208,8 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
                                                          0.01, d_R1EdgeCosts_ptr_, activeSize, d_fromR1_ptr_, d_toR1_ptr_, nR1Edges_,
                                                          d_selR1Edge_ptr_, d_valR1Edge_ptr_, d_R1Threshold_ptr_);
 
-            dijkstraGPU(r1_initial, NUM_R1_CELLS, nR1Edges_, d_vertexArray_ptr_, d_edgeArray_ptr_, d_weightArray_ptr_, d_finalizedVertices_ptr_,
-                        d_shortestDistances_ptr_, d_updatingShortestDistances_ptr_, h_finalizedVertices_);
+            dijkstraGPU(r1_initial, NUM_R1_CELLS, nR1Edges_, d_vertexArray_ptr_, d_edgeArray_ptr_, d_weightArray_ptr_,
+                        d_finalizedVertices_ptr_, d_shortestDistances_ptr_, d_updatingShortestDistances_ptr_, h_finalizedVertices_);
 
             // PROPAGATE G:
             thrust::exclusive_scan(d_G_.begin(), d_G_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
@@ -271,46 +267,46 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
                     break;
                 }
 
-            // std::ostringstream filename;
-            // std::filesystem::create_directories("Data");
-            // std::filesystem::create_directories("Data/Samples");
-            // std::filesystem::create_directories("Data/UnexploredSamples");
-            // std::filesystem::create_directories("Data/Parents");
-            // std::filesystem::create_directories("Data/R1Scores");
-            // std::filesystem::create_directories("Data/R1Edges");
-            // std::filesystem::create_directories("Data/R1EdgeSel");
-            // std::filesystem::create_directories("Data/R1EdgeVal");
-            // std::filesystem::create_directories("Data/R1Avail");
-            // std::filesystem::create_directories("Data/R1");
-            // std::filesystem::create_directories("Data/G");
-            // std::filesystem::create_directories("Data/GNew");
-            // filename.str("");
-            // filename << "Data/Samples/samples" << itr << ".csv";
-            // copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
-            // filename.str("");
-            // filename << "Data/Parents/parents" << itr << ".csv";
-            // copyAndWriteVectorToCSV(d_treeParentIdx_, filename.str(), maxTreeSize_, 1);
-            // filename.str("");
-            // filename << "Data/R1Scores/R1Scores" << itr << ".csv";
-            // copyAndWriteVectorToCSV(d_R1Score_, filename.str(), N_*N_, 1);
-            // filename.str("");
-            // filename << "Data/R1Avail/R1Avail" << itr << ".csv";
-            // copyAndWriteVectorToCSV(d_R1Avail_, filename.str(), N_*N_, 1);
-            // filename.str("");
-            // filename << "Data/R1/R1" << itr << ".csv";
-            // copyAndWriteVectorToCSV(d_R1_, filename.str(), N_*N_, 1);
-            // filename.str("");
-            // filename << "Data/UnexploredSamples/unexploredSamples" << itr << ".csv";
-            // copyAndWriteVectorToCSV(d_unexploredSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
-            // filename.str("");
-            // filename << "Data/R1Edges/R1Edges" << itr << ".csv";
-            // copyAndWriteVectorToCSV(d_R1EdgeCosts_, filename.str(), nR1Edges_, 1);
-            // filename.str("");
-            // filename << "Data/R1EdgeVal/R1EdgeVal" << itr << ".csv";
-            // copyAndWriteVectorToCSV(d_valR1Edge_, filename.str(), nR1Edges_, 1);
-            // filename.str("");
-            // filename << "Data/R1EdgeSel/R1EdgeSel" << itr << ".csv";
-            // copyAndWriteVectorToCSV(d_selR1Edge_, filename.str(), nR1Edges_, 1);
+            std::ostringstream filename;
+            std::filesystem::create_directories("Data");
+            std::filesystem::create_directories("Data/Samples");
+            std::filesystem::create_directories("Data/UnexploredSamples");
+            std::filesystem::create_directories("Data/Parents");
+            std::filesystem::create_directories("Data/R1Scores");
+            std::filesystem::create_directories("Data/R1Edges");
+            std::filesystem::create_directories("Data/R1EdgeSel");
+            std::filesystem::create_directories("Data/R1EdgeVal");
+            std::filesystem::create_directories("Data/R1Avail");
+            std::filesystem::create_directories("Data/R1");
+            std::filesystem::create_directories("Data/G");
+            std::filesystem::create_directories("Data/GNew");
+            filename.str("");
+            filename << "Data/Samples/samples" << itr << ".csv";
+            copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
+            filename.str("");
+            filename << "Data/Parents/parents" << itr << ".csv";
+            copyAndWriteVectorToCSV(d_treeParentIdx_, filename.str(), maxTreeSize_, 1);
+            filename.str("");
+            filename << "Data/R1Scores/R1Scores" << itr << ".csv";
+            copyAndWriteVectorToCSV(d_R1Score_, filename.str(), N_ * N_, 1);
+            filename.str("");
+            filename << "Data/R1Avail/R1Avail" << itr << ".csv";
+            copyAndWriteVectorToCSV(d_R1Avail_, filename.str(), N_ * N_, 1);
+            filename.str("");
+            filename << "Data/R1/R1" << itr << ".csv";
+            copyAndWriteVectorToCSV(d_R1_, filename.str(), N_ * N_, 1);
+            filename.str("");
+            filename << "Data/UnexploredSamples/unexploredSamples" << itr << ".csv";
+            copyAndWriteVectorToCSV(d_unexploredSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
+            filename.str("");
+            filename << "Data/R1Edges/R1Edges" << itr << ".csv";
+            copyAndWriteVectorToCSV(d_R1EdgeCosts_, filename.str(), nR1Edges_, 1);
+            filename.str("");
+            filename << "Data/R1EdgeVal/R1EdgeVal" << itr << ".csv";
+            copyAndWriteVectorToCSV(d_valR1Edge_, filename.str(), nR1Edges_, 1);
+            filename.str("");
+            filename << "Data/R1EdgeSel/R1EdgeSel" << itr << ".csv";
+            copyAndWriteVectorToCSV(d_selR1Edge_, filename.str(), nR1Edges_, 1);
         }
 
     double t_kgmt = (std::clock() - t_kgmtStart) / (double)CLOCKS_PER_SEC;
@@ -337,8 +333,7 @@ void GoalBiasedKGMT::plan(float* initial, float* goal, float* d_obstacles, int o
 }
 
 __global__ void updateR_gb(float* R1Score, int* R2Avail, int* R1Avail, int* R1Valid, int* R1, int n, float epsilon, float* R1EdgeCosts,
-                           int activeSize, int* fromR1, int* toR1, int nR1Edges, int* selR1Edge, int* valR1Edge, float* R1Threshold)
-{
+                           int activeSize, int* fromR1, int* toR1, int nR1Edges, int* selR1Edge, int* valR1Edge, float* R1Threshold) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
     __shared__ float s_alpha[NUM_R1_CELLS];
@@ -410,8 +405,7 @@ __global__ void updateR_gb(float* R1Score, int* R2Avail, int* R1Avail, int* R1Va
 // TODO: Change it to a 2D block. each thread square calculates 1 R1 cell. Should help with fetching
 // R2Avail.
 __global__ void updateR1_gb(float* R1Score, int* R1Avail, int* R2Avail, int* R1Valid, int* R1Invalid, int* R1, int n, float epsilon,
-                            float R1Vol, float* R1Threshold, int activeSize)
-{
+                            float R1Vol, float* R1Threshold, int activeSize) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if(tid >= NUM_R1 * NUM_R1) return;
 
@@ -455,8 +449,7 @@ __global__ void updateR1_gb(float* R1Score, int* R1Avail, int* R2Avail, int* R1V
         }
 }
 
-__global__ void findInd_gb(int numSamples, bool* S, int* scanIdx, int* activeS)
-{
+__global__ void findInd_gb(int numSamples, bool* S, int* scanIdx, int* activeS) {
     int node = blockIdx.x * blockDim.x + threadIdx.x;
     if(node >= numSamples) return;
     if(!S[node])
@@ -466,8 +459,7 @@ __global__ void findInd_gb(int numSamples, bool* S, int* scanIdx, int* activeS)
     activeS[scanIdx[node]] = node;
 }
 
-__global__ void findInd_gb(int numSamples, int* S, int* scanIdx, int* activeS)
-{
+__global__ void findInd_gb(int numSamples, int* S, int* scanIdx, int* activeS) {
     int node = blockIdx.x * blockDim.x + threadIdx.x;
     if(node >= numSamples) return;
     if(!S[node])
@@ -481,8 +473,7 @@ __global__ void
 propagateG_gb(int sizeG, int* activeGIdx, bool* G, bool* GNew, float* treeSamples, float* unexploredSamples, int* uParentIdx, int* R1Valid,
               int* R2Valid, int* R1, int* R2, int* R1Avail, int* R2Avail, int N, int n, float R1Size, float R2Size,
               curandState* randomStates, int numDisc, float agentLength, float* R1Threshold, float* R1Scores, float* obstacles,
-              int obstaclesCount, float width, float height, int* selR1Edge, int* valR1Edge, int* hashTable, int tableSize)
-{
+              int obstaclesCount, float width, float height, int* selR1Edge, int* valR1Edge, int* hashTable, int tableSize) {
     // block expands x0 BLOCK_SIZE times.
     if(blockIdx.x >= sizeG) return;
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -532,8 +523,7 @@ __global__ void
 propagateGV2_gb(int sizeG, int* activeGIdx, bool* G, bool* GNew, float* treeSamples, float* unexploredSamples, int* uParentIdx,
                 int* R1Valid, int* R2Valid, int* R1, int* R2, int* R1Avail, int* R2Avail, int N, int n, float R1Size, float R2Size,
                 curandState* randomStates, int numDisc, float agentLength, float* R1Threshold, float* R1Scores, float* obstacles,
-                int obstaclesCount, int iterations, float width, float height, int* selR1Edge, int* valR1Edge)
-{
+                int obstaclesCount, int iterations, float width, float height, int* selR1Edge, int* valR1Edge) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int x0Idx = activeGIdx[tid];
     if(!G[x0Idx])
@@ -576,8 +566,7 @@ propagateGV2_gb(int sizeG, int* activeGIdx, bool* G, bool* GNew, float* treeSamp
 }
 
 __global__ void updateG_gb(float* treeSamples, float* unexploredSamples, int* uParentIdx, int* treeParentIdx, bool* G, bool* GNew,
-                           int* GNewIdx, int GNewSize, int treeSize, float* costs, float* xGoal, float r, float* costToGoal)
-{
+                           int* GNewIdx, int GNewSize, int treeSize, float* costs, float* xGoal, float r, float* costToGoal) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     GNew[tid] = false;
 
@@ -618,20 +607,17 @@ __global__ void updateG_gb(float* treeSamples, float* unexploredSamples, int* uP
         }
 }
 
-__global__ void initCurandStates_gb(curandState* states, int numStates, int seed)
-{
+__global__ void initCurandStates_gb(curandState* states, int numStates, int seed) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if(tid >= numStates) return;
     curand_init(seed, tid, 0, &states[tid]);
 }
 
-__device__ float getCost_gb(float* x0, float* x1)
-{
+__device__ float getCost_gb(float* x0, float* x1) {
     return x1[SAMPLE_DIM - 1];  // traj time
 }
 
-__device__ bool inGoalRegion_gb(float* x, float* goal, float r)
-{
+__device__ bool inGoalRegion_gb(float* x, float* goal, float r) {
     float dist = sqrt(pow(x[0] - goal[0], 2) + pow(x[1] - goal[1], 2));
     return dist < r;
 }

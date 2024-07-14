@@ -1,41 +1,46 @@
 #include "planners/KGMT.cuh"
 
-
-
 #define SAMPLE_DIM 7
 #define STATE_DIM 4
 #define NUM_R2 8
 #define NUM_R1 16
 
-KGMT::KGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, float agentLength, float goalThreshold):
-    width_(width), height_(height), N_(N), n_(n), numIterations_(numIterations), maxTreeSize_(maxTreeSize), numDisc_(numDisc), agentLength_(agentLength), goalThreshold_(goalThreshold){
-
+KGMT::KGMT(float width, float height, int N, int n, int numIterations, int maxTreeSize, int numDisc, float agentLength, float goalThreshold)
+    : width_(width)
+    , height_(height)
+    , N_(N)
+    , n_(n)
+    , numIterations_(numIterations)
+    , maxTreeSize_(maxTreeSize)
+    , numDisc_(numDisc)
+    , agentLength_(agentLength)
+    , goalThreshold_(goalThreshold) {
     R1Size_ = width / N;
-    R2Size_ = width / (n*N);
+    R2Size_ = width / (n * N);
 
     d_G_ = thrust::device_vector<bool>(maxTreeSize);
     d_GNew_ = thrust::device_vector<bool>(maxTreeSize);
     d_U_ = thrust::device_vector<bool>(maxTreeSize);
     d_scanIdx_ = thrust::device_vector<int>(maxTreeSize);
-    d_scanIdxGnew_= thrust::device_vector<int>(maxTreeSize);
-    d_R1scanIdx_ = thrust::device_vector<int>(N*N);
+    d_scanIdxGnew_ = thrust::device_vector<int>(maxTreeSize);
+    d_R1scanIdx_ = thrust::device_vector<int>(N * N);
     d_activeIdx_ = thrust::device_vector<int>(maxTreeSize);
     d_activeUIdx_ = thrust::device_vector<int>(maxTreeSize);
-    d_activeR1Idx_ = thrust::device_vector<int>(N*N);
+    d_activeR1Idx_ = thrust::device_vector<int>(N * N);
     d_treeParentIdx_ = thrust::device_vector<int>(maxTreeSize);
     d_treeSamples_ = thrust::device_vector<float>(maxTreeSize * SAMPLE_DIM);
     d_xGoal_ = thrust::device_vector<float>(SAMPLE_DIM);
     d_unexploredSamples_ = thrust::device_vector<float>(maxTreeSize * SAMPLE_DIM);
     d_uParentIdx_ = thrust::device_vector<int>(maxTreeSize);
-    d_R1Avail_ = thrust::device_vector<int>(N*N);
-    d_R2Avail_ = thrust::device_vector<int>(N*N*n*n);
-    d_R1Score_ = thrust::device_vector<float>(N*N);
-    d_R1Valid_ = thrust::device_vector<int>(N*N);
-    d_R2Valid_ = thrust::device_vector<int>(N*N*n*n);
-    d_R1Invalid_ = thrust::device_vector<int>(N*N);
-    d_R2Invalid_ = thrust::device_vector<int>(N*N*n*n);
-    d_R1_ = thrust::device_vector<int>(N*N);
-    d_R2_ = thrust::device_vector<int>(N*N*n*n);
+    d_R1Avail_ = thrust::device_vector<int>(N * N);
+    d_R2Avail_ = thrust::device_vector<int>(N * N * n * n);
+    d_R1Score_ = thrust::device_vector<float>(N * N);
+    d_R1Valid_ = thrust::device_vector<int>(N * N);
+    d_R2Valid_ = thrust::device_vector<int>(N * N * n * n);
+    d_R1Invalid_ = thrust::device_vector<int>(N * N);
+    d_R2Invalid_ = thrust::device_vector<int>(N * N * n * n);
+    d_R1_ = thrust::device_vector<int>(N * N);
+    d_R2_ = thrust::device_vector<int>(N * N * n * n);
     d_uValid_ = thrust::device_vector<bool>(maxTreeSize);
     d_costs_ = thrust::device_vector<float>(maxTreeSize);
 
@@ -73,13 +78,11 @@ KGMT::KGMT(float width, float height, int N, int n, int numIterations, int maxTr
     R1Threshold_ = 0.0;
     cudaMalloc(&d_R1Threshold_ptr_, sizeof(float));
     cudaMemcpy(d_R1Threshold_ptr_, &R1Threshold_, sizeof(float), cudaMemcpyHostToDevice);
-
 }
 
 void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCount) {
-    
     double t_kgmtStart = std::clock();
-    
+
     // initialize vectors with root of tree
     cudaMemcpy(d_treeSamples_ptr_, initial, SAMPLE_DIM * sizeof(float), cudaMemcpyHostToDevice);
     bool value = true;
@@ -98,9 +101,9 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
     // initialize xGoal
     printf("Goal: %f, %f\n", goal[0], goal[1]);
     cudaMemcpy(d_xGoal_ptr_, goal, SAMPLE_DIM * sizeof(float), cudaMemcpyHostToDevice);
-    
+
     const int blockSize = 128;
-	const int gridSize = std::min((maxTreeSize_ + blockSize - 1) / blockSize, 2147483647);
+    const int gridSize = std::min((maxTreeSize_ + blockSize - 1) / blockSize, 2147483647);
     int gridSizeActive = 1;
     int blockSizeActive = 32;
 
@@ -114,183 +117,103 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
     int activeSize = 0;
     int maxIndex;
     float maxValue;
-    while(itr < numIterations_){
-        itr++;
+    while(itr < numIterations_)
+        {
+            itr++;
 
-        // UPDATE GRID SCORES:
-        thrust::exclusive_scan(d_R1Avail_.begin(), d_R1Avail_.end(), d_R1scanIdx_.begin(), 0, thrust::plus<int>());
-        activeSize = d_R1scanIdx_[N_*N_-1];
+            // UPDATE GRID SCORES:
+            thrust::exclusive_scan(d_R1Avail_.begin(), d_R1Avail_.end(), d_R1scanIdx_.begin(), 0, thrust::plus<int>());
+            activeSize = d_R1scanIdx_[N_ * N_ - 1];
 
-        updateR1<<<1, N_*N_>>>(
-            d_R1Score_ptr_, 
-            d_R1Avail_ptr_, 
-            d_R2Avail_ptr_,
-            d_R1Valid_ptr_,
-            d_R1Invalid_ptr_,
-            d_R1_ptr_,
-            n_, 
-            0.01, 
-            R2Size_*R2Size_,
-            d_R1Threshold_ptr_,
-            activeSize);
+            updateR1<<<1, N_ * N_>>>(d_R1Score_ptr_, d_R1Avail_ptr_, d_R2Avail_ptr_, d_R1Valid_ptr_, d_R1Invalid_ptr_, d_R1_ptr_, n_, 0.01,
+                                     R2Size_ * R2Size_, d_R1Threshold_ptr_, activeSize);
 
-        // PROPAGATE G:
-        thrust::exclusive_scan(d_G_.begin(), d_G_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
-        activeSize = d_scanIdx_[maxTreeSize_-1];
-        (d_G_[maxTreeSize_ - 1]) ? ++activeSize : 0;
-        
-        findInd<<<gridSize, blockSize>>>(
-            maxTreeSize_, 
-            d_G_ptr_, 
-            d_scanIdx_ptr_, 
-            d_activeIdx_ptr_);
+            // PROPAGATE G:
+            thrust::exclusive_scan(d_G_.begin(), d_G_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
+            activeSize = d_scanIdx_[maxTreeSize_ - 1];
+            (d_G_[maxTreeSize_ - 1]) ? ++activeSize : 0;
 
-        
+            findInd<<<gridSize, blockSize>>>(maxTreeSize_, d_G_ptr_, d_scanIdx_ptr_, d_activeIdx_ptr_);
 
-        blockSizeActive = 32;
-        gridSizeActive = activeSize;
-        if(blockSizeActive*gridSizeActive > maxTreeSize_ - treeSize_){
-            blockSizeActive = 128;
-            gridSizeActive = int(floor(maxTreeSize_ / blockSizeActive));
-            int remaining = maxTreeSize_ - treeSize_;
-            int iterations = int(float(remaining) / float(activeSize));
-            propagateGV2<<<gridSizeActive, blockSizeActive>>>(
-                activeSize, 
-                d_activeIdx_ptr_, 
-                d_G_ptr_,
-                d_GNew_ptr_,
-                d_treeSamples_ptr_, 
-                d_unexploredSamples_ptr_,
-                d_uParentIdx_ptr_,
-                d_R1Valid_ptr_,
-                d_R2Valid_ptr_,
-                d_R1Invalid_ptr_,
-                d_R2Invalid_ptr_,
-                d_R1_ptr_,
-                d_R2_ptr_,
-                d_R1Avail_ptr_,
-                d_R2Avail_ptr_,
-                N_,
-                n_,
-                R1Size_,
-                R2Size_,
-                d_randomStates, 
-                numDisc_, 
-                agentLength_,
-                d_R1Threshold_ptr_,
-                d_R1Score_ptr_,
-                d_obstacles,
-                obstaclesCount,
-                iterations,
-                width_,
-                height_);
-        }
-        else{
-            propagateG<<<gridSizeActive, blockSizeActive>>>(
-            activeSize, 
-            d_activeIdx_ptr_, 
-            d_G_ptr_,
-            d_GNew_ptr_,
-            d_treeSamples_ptr_, 
-            d_unexploredSamples_ptr_,
-            d_uParentIdx_ptr_,
-            d_R1Valid_ptr_,
-            d_R2Valid_ptr_,
-            d_R1Invalid_ptr_,
-            d_R2Invalid_ptr_,
-            d_R1_ptr_,
-            d_R2_ptr_,
-            d_R1Avail_ptr_,
-            d_R2Avail_ptr_,
-            N_,
-            n_,
-            R1Size_,
-            R2Size_,
-            d_randomStates, 
-            numDisc_, 
-            agentLength_,
-            d_R1Threshold_ptr_,
-            d_R1Score_ptr_,
-            d_obstacles,
-            obstaclesCount,
-            width_,
-            height_);
+            blockSizeActive = 32;
+            gridSizeActive = activeSize;
+            if(blockSizeActive * gridSizeActive > maxTreeSize_ - treeSize_)
+                {
+                    blockSizeActive = 128;
+                    gridSizeActive = int(floor(maxTreeSize_ / blockSizeActive));
+                    int remaining = maxTreeSize_ - treeSize_;
+                    int iterations = int(float(remaining) / float(activeSize));
+                    propagateGV2<<<gridSizeActive, blockSizeActive>>>(
+                      activeSize, d_activeIdx_ptr_, d_G_ptr_, d_GNew_ptr_, d_treeSamples_ptr_, d_unexploredSamples_ptr_, d_uParentIdx_ptr_,
+                      d_R1Valid_ptr_, d_R2Valid_ptr_, d_R1Invalid_ptr_, d_R2Invalid_ptr_, d_R1_ptr_, d_R2_ptr_, d_R1Avail_ptr_,
+                      d_R2Avail_ptr_, N_, n_, R1Size_, R2Size_, d_randomStates, numDisc_, agentLength_, d_R1Threshold_ptr_, d_R1Score_ptr_,
+                      d_obstacles, obstaclesCount, iterations, width_, height_);
+                }
+            else
+                {
+                    propagateG<<<gridSizeActive, blockSizeActive>>>(
+                      activeSize, d_activeIdx_ptr_, d_G_ptr_, d_GNew_ptr_, d_treeSamples_ptr_, d_unexploredSamples_ptr_, d_uParentIdx_ptr_,
+                      d_R1Valid_ptr_, d_R2Valid_ptr_, d_R1Invalid_ptr_, d_R2Invalid_ptr_, d_R1_ptr_, d_R2_ptr_, d_R1Avail_ptr_,
+                      d_R2Avail_ptr_, N_, n_, R1Size_, R2Size_, d_randomStates, numDisc_, agentLength_, d_R1Threshold_ptr_, d_R1Score_ptr_,
+                      d_obstacles, obstaclesCount, width_, height_);
+                }
+
+            // UPDATE G:
+            thrust::exclusive_scan(d_GNew_.begin(), d_GNew_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
+            activeSize = d_scanIdx_[maxTreeSize_ - 1];
+            (d_GNew_[maxTreeSize_ - 1]) ? ++activeSize : 0;
+            findInd<<<gridSize, blockSize>>>(maxTreeSize_, d_GNew_ptr_, d_scanIdx_ptr_, d_activeIdx_ptr_);
+            blockSizeActive = 32;
+            gridSizeActive = std::min(activeSize, int(floor(maxTreeSize_ / blockSizeActive)));
+            updateG<<<gridSizeActive, blockSizeActive>>>(d_treeSamples_ptr_, d_unexploredSamples_ptr_, d_uParentIdx_ptr_,
+                                                         d_treeParentIdx_ptr_, d_G_ptr_, d_GNew_ptr_, d_activeIdx_ptr_, activeSize,
+                                                         treeSize_, d_costs_ptr_, d_xGoal_ptr_, goalThreshold_, d_costToGoal);
+
+            treeSize_ += activeSize;
+
+            cudaMemcpy(&costToGoal_, d_costToGoal, sizeof(float), cudaMemcpyDeviceToHost);
+            if(costToGoal_ != 0)
+                {
+                    break;
+                }
+            if(treeSize_ >= maxTreeSize_)
+                {
+                    printf("Iteration %d, Tree size %d\n", itr, treeSize_);
+                    printf("Tree size exceeded maxTreeSize\n");
+                    break;
+                }
+
+            std::ostringstream filename;
+            std::filesystem::create_directories("Data");
+            std::filesystem::create_directories("Data/Samples");
+            std::filesystem::create_directories("Data/UnexploredSamples");
+            std::filesystem::create_directories("Data/Parents");
+            std::filesystem::create_directories("Data/R1Scores");
+            std::filesystem::create_directories("Data/R1Avail");
+            std::filesystem::create_directories("Data/R1");
+            std::filesystem::create_directories("Data/G");
+            std::filesystem::create_directories("Data/GNew");
+            filename.str("");
+            filename << "Data/Samples/samples" << itr << ".csv";
+            copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
+            filename.str("");
+            filename << "Data/Parents/parents" << itr << ".csv";
+            copyAndWriteVectorToCSV(d_treeParentIdx_, filename.str(), maxTreeSize_, 1);
+            filename.str("");
+            filename << "Data/R1Scores/R1Scores" << itr << ".csv";
+            copyAndWriteVectorToCSV(d_R1Score_, filename.str(), N_ * N_, 1);
+            filename.str("");
+            filename << "Data/R1Avail/R1Avail" << itr << ".csv";
+            copyAndWriteVectorToCSV(d_R1Avail_, filename.str(), N_ * N_, 1);
+            filename.str("");
+            filename << "Data/R1/R1" << itr << ".csv";
+            copyAndWriteVectorToCSV(d_R1_, filename.str(), N_ * N_, 1);
+            filename.str("");
+            filename << "Data/UnexploredSamples/unexploredSamples" << itr << ".csv";
+            copyAndWriteVectorToCSV(d_unexploredSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
         }
 
-        // UPDATE G:
-        thrust::exclusive_scan(d_GNew_.begin(), d_GNew_.end(), d_scanIdx_.begin(), 0, thrust::plus<int>());
-        activeSize = d_scanIdx_[maxTreeSize_-1];
-        (d_GNew_[maxTreeSize_ - 1]) ? ++activeSize : 0;
-        findInd<<<gridSize, blockSize>>>(
-            maxTreeSize_, 
-            d_GNew_ptr_, 
-            d_scanIdx_ptr_, 
-            d_activeIdx_ptr_);
-        blockSizeActive = 32;
-        gridSizeActive = std::min(activeSize, int(floor(maxTreeSize_ / blockSizeActive)));
-        updateG<<<gridSizeActive, blockSizeActive>>>(
-            d_treeSamples_ptr_, 
-            d_unexploredSamples_ptr_, 
-            d_uParentIdx_ptr_,
-            d_treeParentIdx_ptr_,
-            d_G_ptr_,
-            d_GNew_ptr_,
-            d_activeIdx_ptr_, 
-            activeSize, 
-            treeSize_,
-            d_costs_ptr_,
-            d_xGoal_ptr_,
-            goalThreshold_,
-            d_costToGoal);
-
-        
-        
-        treeSize_ += activeSize;
-
-        cudaMemcpy(&costToGoal_, d_costToGoal, sizeof(float), cudaMemcpyDeviceToHost);
-        if(costToGoal_ != 0){
-            break;
-        }
-        if(treeSize_ >= maxTreeSize_){
-            printf("Iteration %d, Tree size %d\n", itr, treeSize_);
-            printf("Tree size exceeded maxTreeSize\n");
-            break;
-        }
-
-        
-        
-        std::ostringstream filename;
-        std::filesystem::create_directories("Data");
-        std::filesystem::create_directories("Data/Samples");
-        std::filesystem::create_directories("Data/UnexploredSamples");
-        std::filesystem::create_directories("Data/Parents");
-        std::filesystem::create_directories("Data/R1Scores");
-        std::filesystem::create_directories("Data/R1Avail");
-        std::filesystem::create_directories("Data/R1");
-        std::filesystem::create_directories("Data/G");
-        std::filesystem::create_directories("Data/GNew");
-        filename.str("");
-        filename << "Data/Samples/samples" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_treeSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
-        filename.str("");
-        filename << "Data/Parents/parents" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_treeParentIdx_, filename.str(), maxTreeSize_, 1);
-        filename.str("");
-        filename << "Data/R1Scores/R1Scores" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_R1Score_, filename.str(), N_*N_, 1);
-        filename.str("");
-        filename << "Data/R1Avail/R1Avail" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_R1Avail_, filename.str(), N_*N_, 1);
-        filename.str("");
-        filename << "Data/R1/R1" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_R1_, filename.str(), N_*N_, 1);
-        filename.str("");
-        filename << "Data/UnexploredSamples/unexploredSamples" << itr << ".csv";
-        copyAndWriteVectorToCSV(d_unexploredSamples_, filename.str(), maxTreeSize_, SAMPLE_DIM);
-
-    }
-
-    double t_kgmt = (std::clock() - t_kgmtStart) / (double) CLOCKS_PER_SEC;
+    double t_kgmt = (std::clock() - t_kgmtStart) / (double)CLOCKS_PER_SEC;
     std::cout << "time inside KGMT is " << t_kgmt << std::endl;
     printf("Iteration %d, Tree size %d\n", itr, treeSize_);
 
@@ -300,14 +223,14 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
     copyAndWriteVectorToCSV(d_treeParentIdx_, "parentRelations.csv", maxTreeSize_, 1);
     copyAndWriteVectorToCSV(d_uParentIdx_, "uParentIdx.csv", maxTreeSize_, 1);
     copyAndWriteVectorToCSV(d_G_, "G.csv", maxTreeSize_, 1);
-    copyAndWriteVectorToCSV(d_R2Avail_, "R2Avail.csv", N_*N_*n_*n_, 1);
-    copyAndWriteVectorToCSV(d_R1Avail_, "R1Avail.csv", N_*N_, 1);
-    copyAndWriteVectorToCSV(d_R1Valid_, "R1Valid.csv", N_*N_, 1);
-    copyAndWriteVectorToCSV(d_R2Valid_, "R2Valid.csv", N_*N_*n_*n_, 1);
-    copyAndWriteVectorToCSV(d_R1Invalid_, "R1Invalid.csv", N_*N_, 1);
-    copyAndWriteVectorToCSV(d_R2Invalid_, "R2Invalid.csv", N_*N_*n_*n_, 1);
-    copyAndWriteVectorToCSV(d_R1Score_, "R1Score.csv", N_*N_, 1);
-    copyAndWriteVectorToCSV(d_R1_, "R1.csv", N_*N_, 1);
+    copyAndWriteVectorToCSV(d_R2Avail_, "R2Avail.csv", N_ * N_ * n_ * n_, 1);
+    copyAndWriteVectorToCSV(d_R1Avail_, "R1Avail.csv", N_ * N_, 1);
+    copyAndWriteVectorToCSV(d_R1Valid_, "R1Valid.csv", N_ * N_, 1);
+    copyAndWriteVectorToCSV(d_R2Valid_, "R2Valid.csv", N_ * N_ * n_ * n_, 1);
+    copyAndWriteVectorToCSV(d_R1Invalid_, "R1Invalid.csv", N_ * N_, 1);
+    copyAndWriteVectorToCSV(d_R2Invalid_, "R2Invalid.csv", N_ * N_ * n_ * n_, 1);
+    copyAndWriteVectorToCSV(d_R1Score_, "R1Score.csv", N_ * N_, 1);
+    copyAndWriteVectorToCSV(d_R1_, "R1.csv", N_ * N_, 1);
 
     // Free the allocated memory for curand states
     cudaFree(d_randomStates);
@@ -315,253 +238,190 @@ void KGMT::plan(float* initial, float* goal, float* d_obstacles, int obstaclesCo
     cudaFree(d_R1Threshold_ptr_);
 }
 
-__global__
-void findInd(int numSamples, bool* S, int* scanIdx, int* activeS){
+__global__ void findInd(int numSamples, bool* S, int* scanIdx, int* activeS) {
     int node = blockIdx.x * blockDim.x + threadIdx.x;
-    if (node >= numSamples)
-        return;
-    if (!S[node]) {
-        return;
-    }
+    if(node >= numSamples) return;
+    if(!S[node])
+        {
+            return;
+        }
     activeS[scanIdx[node]] = node;
 }
 
-__global__
-void findInd(int numSamples, int* S, int* scanIdx, int* activeS){
+__global__ void findInd(int numSamples, int* S, int* scanIdx, int* activeS) {
     int node = blockIdx.x * blockDim.x + threadIdx.x;
-    if (node >= numSamples)
-        return;
-    if (!S[node]) {
-        return;
-    }
+    if(node >= numSamples) return;
+    if(!S[node])
+        {
+            return;
+        }
     activeS[scanIdx[node]] = node;
 }
 
-__global__ void propagateG(
-    int sizeG, 
-    int* activeGIdx, 
-    bool* G,
-    bool* GNew,
-    float* treeSamples,
-    float* unexploredSamples,
-    int* uParentIdx,
-    int* R1Valid,
-    int* R2Valid,
-    int* R1Invalid,
-    int* R2Invalid,
-    int* R1,
-    int* R2,
-    int* R1Avail,
-    int* R2Avail,
-    int N,
-    int n,
-    float R1Size,
-    float R2Size,
-    curandState* randomStates,
-    int numDisc,
-    float agentLength,
-    float* R1Threshold,
-    float* R1Scores,
-    float* obstacles,
-    int obstaclesCount,
-    float width,
-    float height) {
-
+__global__ void propagateG(int sizeG, int* activeGIdx, bool* G, bool* GNew, float* treeSamples, float* unexploredSamples, int* uParentIdx,
+                           int* R1Valid, int* R2Valid, int* R1Invalid, int* R2Invalid, int* R1, int* R2, int* R1Avail, int* R2Avail, int N,
+                           int n, float R1Size, float R2Size, curandState* randomStates, int numDisc, float agentLength, float* R1Threshold,
+                           float* R1Scores, float* obstacles, int obstaclesCount, float width, float height) {
     // block expands x0 BLOCK_SIZE times.
-    if (blockIdx.x >= sizeG)
-        return;
+    if(blockIdx.x >= sizeG) return;
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     __shared__ int x0Idx;
-    if(threadIdx.x == 0){
-        x0Idx = activeGIdx[blockIdx.x];
-        G[x0Idx] = false;
-    }
+    if(threadIdx.x == 0)
+        {
+            x0Idx = activeGIdx[blockIdx.x];
+            G[x0Idx] = false;
+        }
     __syncthreads();
     __shared__ float x0[SAMPLE_DIM];
-    if(threadIdx.x < SAMPLE_DIM){
-        x0[threadIdx.x] = treeSamples[x0Idx * SAMPLE_DIM + threadIdx.x];
-    }
+    if(threadIdx.x < SAMPLE_DIM)
+        {
+            x0[threadIdx.x] = treeSamples[x0Idx * SAMPLE_DIM + threadIdx.x];
+        }
     __syncthreads();
     curandState randState = randomStates[tid];
     float* x1 = &unexploredSamples[tid * SAMPLE_DIM];
     uParentIdx[tid] = x0Idx;
     bool valid = propagateAndCheck(x0, x1, numDisc, agentLength, &randState, obstacles, obstaclesCount, width, height);
     int r1 = getR1(x1[0], x1[1], R1Size, N);
-    int r2 = getR2(x1[0], x1[1], r1, R1Size, N , R2Size, n);
+    int r2 = getR2(x1[0], x1[1], r1, R1Size, N, R2Size, n);
     atomicAdd(&R1[r1], 1);
     atomicAdd(&R2[r2], 1);
-    if(valid){
-        float rand = curand_uniform(&randState);
-        if(rand <= R1Scores[r1] || R2Avail[r2] == 0){
-            GNew[tid] = true;
-        }
-        if(R1Avail[r1] == 0){
-            atomicExch(&R1Avail[r1], 1);
-        }
-        if(R2Avail[r2] == 0){
-            atomicExch(&R2Avail[r2], 1);
-        }
-        atomicAdd(&R2Valid[r2], 1);
-        atomicAdd(&R1Valid[r1], 1);
-    }
-    else {
-        atomicAdd(&R1Invalid[r1], 1);
-        atomicAdd(&R2Invalid[r2], 1);
-    }
-    randomStates[tid] = randState;
-
-}
-__global__ void propagateGV2(
-    int sizeG, 
-    int* activeGIdx, 
-    bool* G,
-    bool* GNew,
-    float* treeSamples,
-    float* unexploredSamples,
-    int* uParentIdx,
-    int* R1Valid,
-    int* R2Valid,
-    int* R1Invalid,
-    int* R2Invalid,
-    int* R1,
-    int* R2,
-    int* R1Avail,
-    int* R2Avail,
-    int N,
-    int n,
-    float R1Size,
-    float R2Size,
-    curandState* randomStates,
-    int numDisc,
-    float agentLength,
-    float* R1Threshold,
-    float* R1Scores,
-    float* obstacles,
-    int obstaclesCount,
-    int iterations,
-    float width,
-    float height){
-    
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    int x0Idx = activeGIdx[tid];
-    if(!G[x0Idx]){
-        return;
-    }
-    G[x0Idx] = false;
-    float* x0 = &treeSamples[x0Idx * SAMPLE_DIM];
-    for(int i = 0; i < iterations; i++){
-        int x1Idx = tid * iterations + i;
-        float* x1 = &unexploredSamples[x1Idx * SAMPLE_DIM];
-        uParentIdx[x1Idx] = x0Idx;
-        bool valid = propagateAndCheck(x0, x1, numDisc, agentLength, &randomStates[x1Idx], obstacles, obstaclesCount, width, height);
-        int r1 = getR1(x1[0], x1[1], R1Size, N);
-        int r2 = getR2(x1[0], x1[1], r1, R1Size, N, R2Size, n);
-        atomicAdd(&R1[r1], 1);
-        atomicAdd(&R2[r2], 1);
-        if (valid) {
-            float rand = curand_uniform(&randomStates[x1Idx]);
-            if (rand <= R1Scores[r1] || R2Avail[r2] == 0) {
-                GNew[x1Idx] = true;
-            }
-            if (R1Avail[r1] == 0) {
-                atomicExch(&R1Avail[r1], 1);
-            }
-            if (R2Avail[r2] == 0) {
-                atomicExch(&R2Avail[r2], 1);
-            }
+    if(valid)
+        {
+            float rand = curand_uniform(&randState);
+            if(rand <= R1Scores[r1] || R2Avail[r2] == 0)
+                {
+                    GNew[tid] = true;
+                }
+            if(R1Avail[r1] == 0)
+                {
+                    atomicExch(&R1Avail[r1], 1);
+                }
+            if(R2Avail[r2] == 0)
+                {
+                    atomicExch(&R2Avail[r2], 1);
+                }
             atomicAdd(&R2Valid[r2], 1);
             atomicAdd(&R1Valid[r1], 1);
         }
-        else {
+    else
+        {
             atomicAdd(&R1Invalid[r1], 1);
             atomicAdd(&R2Invalid[r2], 1);
         }
-        randomStates[x1Idx] = randomStates[x1Idx];
-    }
+    randomStates[tid] = randState;
 }
-
+__global__ void
+propagateGV2(int sizeG, int* activeGIdx, bool* G, bool* GNew, float* treeSamples, float* unexploredSamples, int* uParentIdx, int* R1Valid,
+             int* R2Valid, int* R1Invalid, int* R2Invalid, int* R1, int* R2, int* R1Avail, int* R2Avail, int N, int n, float R1Size,
+             float R2Size, curandState* randomStates, int numDisc, float agentLength, float* R1Threshold, float* R1Scores, float* obstacles,
+             int obstaclesCount, int iterations, float width, float height) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int x0Idx = activeGIdx[tid];
+    if(!G[x0Idx])
+        {
+            return;
+        }
+    G[x0Idx] = false;
+    float* x0 = &treeSamples[x0Idx * SAMPLE_DIM];
+    for(int i = 0; i < iterations; i++)
+        {
+            int x1Idx = tid * iterations + i;
+            float* x1 = &unexploredSamples[x1Idx * SAMPLE_DIM];
+            uParentIdx[x1Idx] = x0Idx;
+            bool valid = propagateAndCheck(x0, x1, numDisc, agentLength, &randomStates[x1Idx], obstacles, obstaclesCount, width, height);
+            int r1 = getR1(x1[0], x1[1], R1Size, N);
+            int r2 = getR2(x1[0], x1[1], r1, R1Size, N, R2Size, n);
+            atomicAdd(&R1[r1], 1);
+            atomicAdd(&R2[r2], 1);
+            if(valid)
+                {
+                    float rand = curand_uniform(&randomStates[x1Idx]);
+                    if(rand <= R1Scores[r1] || R2Avail[r2] == 0)
+                        {
+                            GNew[x1Idx] = true;
+                        }
+                    if(R1Avail[r1] == 0)
+                        {
+                            atomicExch(&R1Avail[r1], 1);
+                        }
+                    if(R2Avail[r2] == 0)
+                        {
+                            atomicExch(&R2Avail[r2], 1);
+                        }
+                    atomicAdd(&R2Valid[r2], 1);
+                    atomicAdd(&R1Valid[r1], 1);
+                }
+            else
+                {
+                    atomicAdd(&R1Invalid[r1], 1);
+                    atomicAdd(&R2Invalid[r2], 1);
+                }
+            randomStates[x1Idx] = randomStates[x1Idx];
+        }
+}
 
 // 1 Block Version. Each thread calculates 1 R1 cell.
 // TODO: Change it to a 2D block. each thread square calculates 1 R1 cell. Should help with fetching R2Avail.
-__global__ void updateR1(
-    float* R1Score, 
-    int* R1Avail, 
-    int* R2Avail, 
-    int* R1Valid, 
-    int* R1Invalid,
-    int* R1,
-    int n, 
-    float epsilon, 
-    float R1Vol,
-    float* R1Threshold,
-    int activeSize) {
-
+__global__ void updateR1(float* R1Score, int* R1Avail, int* R2Avail, int* R1Valid, int* R1Invalid, int* R1, int n, float epsilon,
+                         float R1Vol, float* R1Threshold, int activeSize) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid >= NUM_R1 * NUM_R1)
-        return;
+    if(tid >= NUM_R1 * NUM_R1) return;
 
     // Use shared memory for reduction
     __shared__ float s_totalSum;
 
     float score = 0.0f;
-    if (R1Avail[tid] != 0) {
-        int nValid = R1Valid[tid];
-        float covR = 0;
-        for (int i = tid * n * n; i < (tid + 1) * n * n; i++) {
-            covR += R2Avail[i];
+    if(R1Avail[tid] != 0)
+        {
+            int nValid = R1Valid[tid];
+            float covR = 0;
+            for(int i = tid * n * n; i < (tid + 1) * n * n; i++)
+                {
+                    covR += R2Avail[i];
+                }
+            covR /= n * n;
+
+            float freeVol = ((epsilon + nValid) / (epsilon + nValid + R1Invalid[tid]));
+            score = pow(freeVol, 4) / ((1 + covR) * (1 + pow(R1[tid], 2)));
         }
-        covR /= n * n;
 
-        float freeVol = ((epsilon + nValid) / (epsilon + nValid + R1Invalid[tid]));
-        score = pow(freeVol, 4) / ((1 + covR) * (1 + pow(R1[tid], 2)));
-    }
-
-    typedef cub::BlockReduce<float, NUM_R1*NUM_R1> BlockReduceFloatT;
+    typedef cub::BlockReduce<float, NUM_R1 * NUM_R1> BlockReduceFloatT;
     __shared__ typename BlockReduceFloatT::TempStorage tempStorageFloat;
     float blockSum = BlockReduceFloatT(tempStorageFloat).Sum(score);
 
-    if (threadIdx.x == 0) {
-        s_totalSum = blockSum;
-        R1Threshold[0] = s_totalSum / activeSize;
-        // R1Threshold[0] = 0.01;
-    }
+    if(threadIdx.x == 0)
+        {
+            s_totalSum = blockSum;
+            R1Threshold[0] = s_totalSum / activeSize;
+            // R1Threshold[0] = 0.01;
+        }
     __syncthreads();
 
     // Normalize the score
-    if(R1Avail[tid] == 0){
-        R1Score[tid] = 1.0f;
-    }
-    else {
-        R1Score[tid] = score / s_totalSum;
-    }
+    if(R1Avail[tid] == 0)
+        {
+            R1Score[tid] = 1.0f;
+        }
+    else
+        {
+            R1Score[tid] = score / s_totalSum;
+        }
 }
 
-__global__ void updateG(
-    float* treeSamples, 
-    float* unexploredSamples, 
-    int* uParentIdx,
-    int* treeParentIdx,
-    bool* G,
-    bool* GNew,
-    int* GNewIdx, 
-    int GNewSize, 
-    int treeSize,
-    float* costs,
-    float* xGoal,
-    float r,
-    float* costToGoal){
-    
+__global__ void updateG(float* treeSamples, float* unexploredSamples, int* uParentIdx, int* treeParentIdx, bool* G, bool* GNew,
+                        int* GNewIdx, int GNewSize, int treeSize, float* costs, float* xGoal, float r, float* costToGoal) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     GNew[tid] = false;
 
     __shared__ float s_xGoal[SAMPLE_DIM];
-    if (threadIdx.x < SAMPLE_DIM) {
-        s_xGoal[threadIdx.x] = xGoal[threadIdx.x];
-    }
+    if(threadIdx.x < SAMPLE_DIM)
+        {
+            s_xGoal[threadIdx.x] = xGoal[threadIdx.x];
+        }
     __syncthreads();
-    
-    if(tid >= GNewSize)
-        return;
+
+    if(tid >= GNewSize) return;
 
     // move valid unexplored sample to tree:
     int x1TreeIdx = treeSize + tid;
@@ -585,31 +445,32 @@ __global__ void updateG(
     costs[x1TreeIdx] = costs[x0Idx] + cost;
 
     // check if x1 is the goal:
-    if(inGoalRegion(x1, s_xGoal, r)){
-       costToGoal[0] = costs[x1TreeIdx];
-    }
-    
+    if(inGoalRegion(x1, s_xGoal, r))
+        {
+            costToGoal[0] = costs[x1TreeIdx];
+        }
 }
 
 __global__ void initCurandStates(curandState* states, int numStates, int seed) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid >= numStates)
-        return;
+    if(tid >= numStates) return;
     curand_init(seed, tid, 0, &states[tid]);
 }
 
 __host__ __device__ int getR1(float x, float y, float R1Size, int N) {
     int cellX = static_cast<int>(x / R1Size);
     int cellY = static_cast<int>(y / R1Size);
-    if (cellX >= 0 && cellX < N && cellY >= 0 && cellY < N) {
-        return cellY * N + cellX;
-    }
-    return -1; // Invalid cell
+    if(cellX >= 0 && cellX < N && cellY >= 0 && cellY < N)
+        {
+            return cellY * N + cellX;
+        }
+    return -1;  // Invalid cell
 }
 __host__ __device__ int getR2(float x, float y, int r1, float R1Size, int N, float R2Size, int n) {
-    if (r1 == -1) {
-        return -1; // Invalid R1 cell, so R2 is also invalid
-    }
+    if(r1 == -1)
+        {
+            return -1;  // Invalid R1 cell, so R2 is also invalid
+        }
 
     int cellY_R1 = r1 / N;
     int cellX_R1 = r1 % N;
@@ -620,18 +481,19 @@ __host__ __device__ int getR2(float x, float y, int r1, float R1Size, int N, flo
 
     int cellX_R2 = static_cast<int>(localX / R2Size);
     int cellY_R2 = static_cast<int>(localY / R2Size);
-    if (cellX_R2 >= 0 && cellX_R2 < n && cellY_R2 >= 0 && cellY_R2 < n) {
-        int localR2 = cellY_R2 * n + cellX_R2;
-        return r1 * (n * n) + localR2; // Flattened index
-    }
-    return -1; // Invalid subcell
+    if(cellX_R2 >= 0 && cellX_R2 < n && cellY_R2 >= 0 && cellY_R2 < n)
+        {
+            int localR2 = cellY_R2 * n + cellX_R2;
+            return r1 * (n * n) + localR2;  // Flattened index
+        }
+    return -1;  // Invalid subcell
 }
 
-__device__ float getCost(float* x0, float* x1){
-    return x1[SAMPLE_DIM - 1]; // traj time
+__device__ float getCost(float* x0, float* x1) {
+    return x1[SAMPLE_DIM - 1];  // traj time
 }
 
-__device__ bool inGoalRegion(float* x, float* goal, float r){
+__device__ bool inGoalRegion(float* x, float* goal, float r) {
     float dist = sqrt(pow(x[0] - goal[0], 2) + pow(x[1] - goal[1], 2));
     return dist < r;
 }

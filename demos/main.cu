@@ -15,8 +15,7 @@
 
 #define WORKSPACE_DIM 2
 
-int main(void)
-{
+int main(void) {
     int sampleDim = 7;
     float width = 20.0;
     float height = 20.0;

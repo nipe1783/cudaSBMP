@@ -86,7 +86,6 @@ public:
     thrust::device_vector<float> d_shortestDistances_;
     thrust::device_vector<float> d_updatingShortestDistances_;
 
-
     bool* d_G_ptr_;
     bool* d_GNew_ptr_;
     bool* d_U_ptr_;

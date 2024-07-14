@@ -4,15 +4,13 @@
 OccupancyGrid::OccupancyGrid() : width_(0), height_(0), N_(0), numEdges_(0), cellSize_(0) {}
 
 // Parameterized constructor
-OccupancyGrid::OccupancyGrid(float width, float height, int N) : width_(width), height_(height), N_(N), cellSize_(width / N)
-{
+OccupancyGrid::OccupancyGrid(float width, float height, int N) : width_(width), height_(height), N_(N), cellSize_(width / N) {
     numEdges_ = N * N * 4;  // Max 4 edges per cell
     grid_.resize(N * N, 0);
 }
 
 // Method to construct fromNodes
-std::vector<int> OccupancyGrid::constructFromNodes()
-{
+std::vector<int> OccupancyGrid::constructFromNodes() {
     std::vector<int> fromNodes;
 
     for(int row = 0; row < N_; ++row)
@@ -51,8 +49,7 @@ std::vector<int> OccupancyGrid::constructFromNodes()
 }
 
 // Method to construct toNodes
-std::vector<int> OccupancyGrid::constructToNodes()
-{
+std::vector<int> OccupancyGrid::constructToNodes() {
     std::vector<int> toNodes;
 
     for(int row = 0; row < N_; ++row)
@@ -91,8 +88,7 @@ std::vector<int> OccupancyGrid::constructToNodes()
 }
 
 // Method to construct vertexArray
-std::vector<int> OccupancyGrid::constructVertexArray()
-{
+std::vector<int> OccupancyGrid::constructVertexArray() {
     std::vector<int> vertexArray(N_ * N_);
     int edgeIdx = 0;
 
@@ -115,8 +111,7 @@ std::vector<int> OccupancyGrid::constructVertexArray()
 }
 
 // Method to construct edgeArray and weightArray
-std::vector<int> OccupancyGrid::constructEdgeAndWeightArrays()
-{
+std::vector<int> OccupancyGrid::constructEdgeAndWeightArrays() {
     std::vector<int> edgeArray;
     std::vector<float> weightArray;
 
@@ -159,8 +154,7 @@ std::vector<int> OccupancyGrid::constructEdgeAndWeightArrays()
     return edgeArray;
 }
 
-__host__ __device__ int getR1_gb(float x, float y, float R1Size, int N)
-{
+__host__ __device__ int getR1_gb(float x, float y, float R1Size, int N) {
     int cellX = static_cast<int>(x / R1Size);
     int cellY = static_cast<int>(y / R1Size);
     if(cellX >= 0 && cellX < N && cellY >= 0 && cellY < N)
@@ -170,8 +164,7 @@ __host__ __device__ int getR1_gb(float x, float y, float R1Size, int N)
     return -1;  // Invalid cell
 }
 
-__host__ __device__ int getR2_gb(float x, float y, int r1, float R1Size, int N, float R2Size, int n)
-{
+__host__ __device__ int getR2_gb(float x, float y, int r1, float R1Size, int N, float R2Size, int n) {
     if(r1 == -1)
         {
             return -1;  // Invalid R1 cell, so R2 is also invalid
@@ -194,13 +187,11 @@ __host__ __device__ int getR2_gb(float x, float y, int r1, float R1Size, int N, 
     return -1;  // Invalid subcell
 }
 
-__device__ int hashFunction(int key, int size)
-{
+__device__ int hashFunction(int key, int size) {
     return key % size;
 }
 
-__global__ void initHashMap(int* fromNodes, int* toNodes, int* edgeIndices, int* hashTable, int tableSize, int numEdges)
-{
+__global__ void initHashMap(int* fromNodes, int* toNodes, int* edgeIndices, int* hashTable, int tableSize, int numEdges) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if(tid >= numEdges) return;
 
@@ -214,8 +205,7 @@ __global__ void initHashMap(int* fromNodes, int* toNodes, int* edgeIndices, int*
     hashTable[2 * hash + 1] = edgeIndices[tid];
 }
 
-__device__ int getEdgeIndex(int fromNode, int toNode, int* hashTable, int tableSize)
-{
+__device__ int getEdgeIndex(int fromNode, int toNode, int* hashTable, int tableSize) {
     int key = fromNode * 100000 + toNode;
     int hash = hashFunction(key, tableSize);
 
